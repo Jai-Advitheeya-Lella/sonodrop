@@ -1,0 +1,26 @@
+all the animations should be like fluid/drops dripping type of animations
+should support multiple formats of audio(mp3 , wav & FLAC are must )
+Iteractive UI 
+3d animations 
+Widgets 
+Ability to sort Albums, songs in alphabetical or data added, ascending or descending 
+Library tab
+ability to show poster while playing or browsing 
+search option through the files 
+you can take spotify/tidal for reference of abilities but graphics/animations shuold be far better than them, 
+A vareity of themes
+Upgradable in the future
+
+
+Additions right now :
+Adding an equilizer a proper functionality not just UI
+Adding cyberpunk theme 
+Make the static background as glassy translucent vinyl recorder instead of black 
+Need upsampling, something like a sox upsampling 
+Didnt like the liquid spectrum need diff visualisation options more artzy 
+Compatable for anyone(linux users) to be able to use it as an application - I'll upload the relevant package in github and ppl should be able to download from there 
+
+Library tab currently has a grid layout - I need a graphical 3D scroll animation there - we shuold be able to chose from grid view vs call it record view where all the albums will be on ahorzontal 3D circle 
+
+When I said widgets - I meant desktop widgets not widgets inside app, remove the clock keep everything as is and remove the customise button&functionality in home tab, Need a bunch of diff widgets 
+
