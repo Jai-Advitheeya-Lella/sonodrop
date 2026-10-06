@@ -13,11 +13,15 @@ float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 `
 
 /**
- * Background: a lava-lamp of soft metaballs, a film of liquid along the top edge that
- * lets go of slow drips, and a blob that follows the pointer. Drawn at low resolution.
+ * Background: a turntable made of glass. A translucent record with real grooves, a label that
+ * turns while music plays and a tonearm that tracks across the side — with the liquid (soft
+ * metaballs, drips falling from the top edge, a blob under the pointer) seen through it, bent by the glass.
  */
 export const AMBIENT = `${COMMON}
 uniform vec3 uMouse; // x, y (in height units), strength
+uniform vec3 uDisc;  // centre x, y and radius of the record, in height units
+uniform float uSpin; // how far the record has turned, radians
+uniform vec2 uArm;   // tonearm: 0 parked .. 1 on the record, and how far through the side it is
 
 float field = 0.0;
 vec2 grad = vec2(0.0);
@@ -32,11 +36,37 @@ void blob(vec2 p, vec2 c, float r, vec3 col) {
   tint += col * w;
 }
 
+float capsule(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a, ba = b - a;
+  return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0));
+}
+
 void main() {
   float aspect = uRes.x / uRes.y;
-  vec2 p = gl_FragCoord.xy / uRes.y;
+  vec2 p0 = gl_FragCoord.xy / uRes.y;
   float t = uTime;
 
+  // ---- the record ----
+  float R = uDisc.z;
+  vec2 dv = p0 - uDisc.xy;
+  float dr = length(dv);
+  float rn = dr / R;
+  float ang = atan(dv.y, dv.x);
+  float aa = 1.5 / (R * uRes.y);
+  float disc = 1.0 - smoothstep(1.0 - aa, 1.0 + aa, rn);
+  float label = 1.0 - smoothstep(0.34 - aa, 0.34 + aa, rn);
+  float hole = 1.0 - smoothstep(0.02 - aa, 0.02 + aa, rn);
+  // Grooves fill the playing surface, broken by the smooth bands between tracks.
+  float surface = smoothstep(0.37, 0.4, rn) * (1.0 - smoothstep(0.95, 0.97, rn));
+  float gaps = smoothstep(0.0, 0.006, abs(rn - 0.53)) * smoothstep(0.0, 0.006, abs(rn - 0.68)) * smoothstep(0.0, 0.006, abs(rn - 0.82));
+  float grooves = surface * gaps;
+  float ridge = sin(rn * R * uRes.y * 0.9);
+
+  // Glass bends what is behind it: a lens towards the rim, a ripple across every groove.
+  vec2 radial = dv / max(dr, 1e-4);
+  vec2 p = p0 + disc * radial * (0.010 * grooves * ridge - 0.030 * rn * rn + 0.02 * label);
+
+  // ---- the liquid behind it ----
   for (int i = 0; i < 7; i++) {
     float fi = float(i);
     vec2 c = vec2(aspect * (0.5 + 0.47 * sin(t * (0.050 + 0.013 * fi) + fi * 2.4)),
@@ -76,12 +106,55 @@ void main() {
   float diffuse = clamp(dot(n, l), 0.0, 1.0);
   float spec = pow(clamp(dot(n, normalize(l + vec3(0.0, 0.0, 1.0))), 0.0, 1.0), 48.0);
 
-  float strength = mix(0.30, 0.34, uLight);
-  vec3 base = uBg * (0.94 + 0.12 * p.y);
-  vec3 body = mix(uBg, liquid, strength) * (0.55 + 0.75 * diffuse);
+  // Not black: a frosted pane, lit softly from one corner.
+  float pane = 0.5 + 0.5 * sin((p0.x * 0.8 + p0.y) * 2.2 + t * 0.03);
+  vec3 base = uBg * (0.96 + 0.14 * p0.y) + mix(uA, uB, pane) * mix(0.05, 0.03, uLight) * (0.6 + 0.4 * pane);
+  vec3 body = mix(uBg, liquid, mix(0.34, 0.36, uLight)) * (0.55 + 0.75 * diffuse);
   vec3 col = base + liquid * 0.07 * smoothstep(0.25, 1.0, field) * (1.0 - uLight);
   col = mix(col, body, inside);
   col += (spec * 0.16 + 0.05 * uAudio.w) * inside * mix(liquid, vec3(1.0), 0.5);
+
+  // ---- glass over the top ----
+  vec3 glass = mix(uA, uB, 0.5 + 0.5 * sin(ang * 2.0 + 0.6));
+  vec3 shine = mix(vec3(1.0), glass, 0.4);
+  // The body of the record catches a little light everywhere, more towards the rim.
+  col = mix(col, col * mix(1.3, 0.93, uLight) + glass * 0.035, disc);
+  col *= 1.0 - disc * grooves * 0.07 * (0.5 + 0.5 * ridge);
+  // Vinyl's signature: two bright wedges where the grooves face the light.
+  float sway = ang - 0.95 - 0.12 * sin(t * 0.17);
+  float wedge = pow(abs(cos(sway)), 22.0) + 0.45 * pow(abs(cos(sway + 1.25)), 70.0);
+  col += disc * grooves * wedge * (0.62 + 0.38 * ridge) * shine * (0.15 + 0.12 * uAudio.x);
+  // A faint mark that goes round with the record, so the turning reads even at a glance.
+  col += disc * surface * pow(max(cos(ang + uSpin), 0.0), 90.0) * shine * 0.05;
+  // Bevelled edge.
+  col += disc * smoothstep(0.95, 0.995, rn) * shine * 0.13;
+  col += smoothstep(2.5 * aa, 0.0, abs(rn - 1.0)) * shine * 0.3;
+
+  // The label: frosted colour, with a ring of "print" that turns.
+  float la = ang + uSpin;
+  vec3 ink = mix(mix(uA, uB, 0.5 + 0.5 * sin(la)), uC, 0.5 + 0.5 * sin(la * 2.0 + 1.0));
+  float print = step(0.21, rn) * step(rn, 0.25) * smoothstep(0.2, 0.6, sin(la * 36.0)) * step(sin(la * 3.0), 0.55);
+  col = mix(col, mix(uBg, ink, 0.5 - 0.22 * print), label * 0.62);
+  col += smoothstep(2.5 * aa, 0.0, abs(rn - 0.34)) * shine * 0.16;
+  col += label * pow(max(cos(ang - 2.2), 0.0), 6.0) * 0.05;
+  col = mix(col, uBg * 0.7, hole);
+  col += smoothstep(2.5 * aa, 0.0, abs(rn - 0.02)) * shine * 0.25;
+
+  // The tonearm swings in from its rest when the music starts and creeps inward as the side plays.
+  vec2 pivot = uDisc.xy + R * vec2(1.12, 0.62);
+  float reach = radians(mix(62.0, mix(45.6, 17.0, uArm.y), uArm.x));
+  float theta = radians(208.97) + reach;
+  vec2 along = vec2(cos(theta), sin(theta));
+  vec2 head = pivot + along * R;
+  float arm = capsule(p0, pivot - along * R * 0.2, head - along * R * 0.05) - R * 0.011;
+  arm = min(arm, capsule(p0, head - along * R * 0.07, head + along * R * 0.03) - R * 0.03);
+  arm = min(arm, capsule(p0, pivot - along * R * 0.3, pivot - along * R * 0.17) - R * 0.04);
+  arm = min(arm, length(p0 - pivot) - R * 0.075);
+  float armBody = 1.0 - smoothstep(-aa * R, aa * R, arm);
+  float armEdge = smoothstep(2.5 * aa * R, 0.0, abs(arm));
+  col = mix(col, col * mix(1.22, 0.9, uLight) + shine * 0.07, armBody);
+  col += armEdge * shine * 0.26;
+  col += armBody * smoothstep(R * 0.03, 0.0, abs(arm + R * 0.008)) * 0.05;
 
   col += (hash(gl_FragCoord.xy + fract(t)) - 0.5) / 255.0;
   outColor = vec4(col, 1.0);

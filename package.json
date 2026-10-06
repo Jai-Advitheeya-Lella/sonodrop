@@ -1,16 +1,26 @@
 {
   "name": "sonodrop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A liquid local music player",
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
+  "author": {
+    "name": "Jai-Advitheeya-Lella"
+  },
+  "homepage": "https://github.com/Jai-Advitheeya-Lella/sonodrop",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Jai-Advitheeya-Lella/sonodrop.git"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite build && electron .",
     "preview": "electron .",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist": "electron-vite build && electron-builder --linux AppImage tar.gz",
+    "dist:all": "electron-vite build && electron-builder --linux AppImage deb pacman tar.gz"
   },
   "dependencies": {
     "music-metadata": "^12.0.0"
@@ -23,11 +33,51 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "typescript": "^7.0.2",
     "vite": "^7.3.6",
     "zustand": "^5.0.15"
-  }
+  },
+  "build": {
+    "appId": "io.github.jai-advitheeya-lella.sonodrop",
+    "productName": "Sonodrop",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**",
+      "package.json"
+    ],
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "linux": {
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ],
+      "category": "AudioVideo",
+      "icon": "build/icons",
+      "executableName": "sonodrop",
+      "synopsis": "A liquid local music player",
+      "maintainer": "Jai-Advitheeya-Lella <Jai-Advitheeya-Lella@users.noreply.github.com>",
+      "desktop": {
+        "entry": {
+          "Name": "Sonodrop",
+          "GenericName": "Music Player",
+          "Keywords": "music;audio;player;flac;mp3;equalizer;",
+          "StartupWMClass": "sonodrop"
+        }
+      },
+      "syncDesktopName": true
+    },
+    "deb": {
+      "recommends": [
+        "ffmpeg"
+      ]
+    }
+  },
+  "desktopName": "sonodrop.desktop"
 }

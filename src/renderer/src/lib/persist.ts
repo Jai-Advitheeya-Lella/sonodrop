@@ -1,4 +1,5 @@
 import { engine } from '@/audio/engine'
+import { syncSound } from '@/lib/sound'
 import { useLibrary } from '@/stores/library'
 import { sessionOf, usePlayer, type Session } from '@/stores/player'
 import { settingsOf, useUi, type Settings } from '@/stores/ui'
@@ -16,17 +17,22 @@ function save(key: string, value: () => unknown, delay = 500): void {
 
 /** Load everything from disk into the stores, then keep disk in step with them. */
 export async function hydrate(): Promise<void> {
-  const { store, library } = window.sono
-  const [settings, user, session, position, snapshot] = await Promise.all([
+  const { store, library, audio, widgets } = window.sono
+  const [settings, user, session, position, snapshot, canResample, openWidgets] = await Promise.all([
     store.get<Partial<Settings>>('settings'),
     store.get<Partial<UserData>>('user'),
     store.get<Partial<Session>>('session'),
     store.get<number>('position'),
-    library.get()
+    library.get(),
+    audio.canResample(),
+    widgets.open()
   ])
   useUi.getState().hydrate(settings)
+  useUi.setState({ canResample, openWidgets })
   useUser.getState().hydrate(user)
   useLibrary.getState().setTracks(snapshot.tracks, snapshot.folders)
+  // The engine needs its equaliser and sample rate before the first track is loaded.
+  syncSound()
   usePlayer.getState().restore(session, position ?? 0)
 
   let lastSettings = JSON.stringify(settingsOf(useUi.getState()))

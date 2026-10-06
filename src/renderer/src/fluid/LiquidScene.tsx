@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { levels } from '@/audio/engine'
+import { levels } from '@/audio/levels'
 import { coverUrl } from '@/lib/format'
 import { onFrame } from '@/lib/ticker'
 import { useUi, type Quality } from '@/stores/ui'

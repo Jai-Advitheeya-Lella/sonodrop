@@ -33,6 +33,11 @@ const PATHS = {
   cube: 'M12 3 4 7.5v9L12 21l8-4.5v-9zM4 7.5l8 4.5 8-4.5M12 12v9',
   pencil: 'M4 20l1-4L16 5l3 3L8 19z',
   playlist: 'M4 6h16M4 11h10M4 16h7M17 12v6.5M17 12l4 1.5M15 18.5a2 2 0 1 0 4 0 2 2 0 0 0-4 0z',
+  eq: 'M6 4v5M6 14v6M12 4v10M12 19v1M18 4v2M18 11v9M4 11.5h4M10 16.5h4M16 8.5h4',
+  grid: 'M4.5 4.5h6v6h-6zM13.5 4.5h6v6h-6zM4.5 13.5h6v6h-6zM13.5 13.5h6v6h-6z',
+  ring: 'M12 6c5 0 9 2 9 4.5S17 15 12 15s-9-2-9-4.5S7 6 12 6zM3 10.5V14c0 2.5 4 4.5 9 4.5s9-2 9-4.5v-3.5',
+  widgets: 'M4 5h9v6H4zM16 5h4v6h-4zM4 14h5v5H4zM12 14h8v5h-8z',
+  wave: 'M3 12c2-6 4-6 6 0s4 6 6 0 4-6 6 0',
   external: 'M14 4h6v6M20 4l-9 9M18 13.5V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5.5'
 } as const
 

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { AlbumGrid, ArtistCard } from '@/components/Albums'
-import { GooTabs, SortControl } from '@/components/Controls'
+import { GooTabs, IconButton, SortControl } from '@/components/Controls'
+import { RecordRing } from '@/components/RecordRing'
 import { TrackList } from '@/components/TrackList'
 import { plural } from '@/lib/format'
 import { ALBUM_SORTS, ARTIST_SORTS, SONG_SORTS, sortAlbums, sortArtists, sortTracks } from '@/lib/sort'
@@ -17,6 +18,7 @@ const TABS: [LibraryTab, string][] = [
 export function LibraryView(): React.JSX.Element {
   const tab = useUi((s) => s.libraryTab)
   const sort = useUi((s) => s.sort)
+  const albumView = useUi((s) => s.albumView)
   const patch = useUi((s) => s.patch)
   const tracks = useLibrary((s) => s.tracks)
   const albums = useLibrary((s) => s.albums)
@@ -42,13 +44,21 @@ export function LibraryView(): React.JSX.Element {
       <div className="toolbar">
         <GooTabs tabs={TABS} value={tab} onChange={(libraryTab) => patch({ libraryTab })} />
         {tab === 'songs' && <SortControl options={SONG_SORTS} value={sort.songs} onChange={(songs) => patch({ sort: { ...sort, songs } })} />}
-        {tab === 'albums' && <SortControl options={ALBUM_SORTS} value={sort.albums} onChange={(albums) => patch({ sort: { ...sort, albums } })} />}
+        {tab === 'albums' && (
+          <div className="sort">
+            <div className="view-switch" role="radiogroup" aria-label="Album layout">
+              <IconButton icon="ring" label="Record view" role="radio" aria-checked={albumView === 'record'} on={albumView === 'record'} onClick={() => patch({ albumView: 'record' })} />
+              <IconButton icon="grid" label="Grid view" role="radio" aria-checked={albumView === 'grid'} on={albumView === 'grid'} onClick={() => patch({ albumView: 'grid' })} />
+            </div>
+            <SortControl options={ALBUM_SORTS} value={sort.albums} onChange={(albums) => patch({ sort: { ...sort, albums } })} />
+          </div>
+        )}
         {tab === 'artists' && <SortControl options={ARTIST_SORTS} value={sort.artists} onChange={(artists) => patch({ sort: { ...sort, artists } })} />}
       </div>
       {/* Re-keyed on every change of order so the new arrangement drips in. */}
-      <div key={`${tab}:${order.by}:${order.dir}`} className="tab-body">
+      <div key={`${tab}:${order.by}:${order.dir}:${albumView}`} className="tab-body">
         {tab === 'songs' && <TrackList tracks={songs} showAdded />}
-        {tab === 'albums' && <AlbumGrid albums={sortedAlbums} />}
+        {tab === 'albums' && (albumView === 'record' ? <RecordRing albums={sortedAlbums} /> : <AlbumGrid albums={sortedAlbums} />)}
         {tab === 'artists' && (
           <div className="grid">
             {sortedArtists.map((artist, i) => (

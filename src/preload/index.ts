@@ -21,17 +21,24 @@ const bridge: SonoBridge = {
     get: (key) => ipcRenderer.invoke('store:get', key),
     set: (key, value) => ipcRenderer.send('store:set', key, value)
   },
-  mini: {
-    toggle: () => ipcRenderer.send('mini:toggle'),
-    pushState: (state) => ipcRenderer.send('mini:state', state),
-    onState: (cb) => listen('mini:state', cb),
-    command: (cmd) => ipcRenderer.send('mini:command', cmd),
-    onCommand: (cb) => listen('mini:command', cb),
-    onOpenChange: (cb) => listen('mini:open', cb)
+  audio: {
+    canResample: () => ipcRenderer.invoke('audio:canResample'),
+    prepare: (trackId, rate) => ipcRenderer.send('audio:prepare', trackId, rate)
+  },
+  widgets: {
+    toggle: (id) => ipcRenderer.send('widgets:toggle', id),
+    open: () => ipcRenderer.invoke('widgets:open'),
+    onOpenChange: (cb) => listen('widgets:open', cb),
+    pushState: (state) => ipcRenderer.send('widgets:state', state),
+    onState: (cb) => listen('widgets:state', cb),
+    pushAudio: (frame) => ipcRenderer.send('widgets:audio', frame),
+    onAudio: (cb) => listen('widgets:audio', cb),
+    command: (cmd) => ipcRenderer.send('widgets:command', cmd),
+    onCommand: (cb) => listen('widgets:command', cb)
   },
   showInFolder: (path) => ipcRenderer.send('shell:showInFolder', path),
   pathForFile: (file) => webUtils.getPathForFile(file),
-  isMini: new URLSearchParams(location.search).has('mini')
+  widgetId: new URLSearchParams(location.search).get('widget')
 }
 
 contextBridge.exposeInMainWorld('sono', bridge)

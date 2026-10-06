@@ -5,7 +5,7 @@ import { plural } from '@/lib/format'
 import { useLibrary } from '@/stores/library'
 import { useUi, type Quality } from '@/stores/ui'
 import { THEMES } from '@/themes'
-import { WIDGETS } from '@/widgets/registry'
+import { DESKTOP_WIDGETS } from '@shared/widgets'
 
 const QUALITIES: [Quality, string, string][] = [
   ['auto', 'Auto', 'Keeps the frame rate smooth by trading resolution'],
@@ -122,32 +122,25 @@ export function Settings(): React.JSX.Element {
         </div>
       </div>
 
-      <h2 className="section">Widgets</h2>
+      <h2 className="section">Desktop widgets</h2>
       <div className="setting-card">
-        <div className="row-actions">
-          <button className="pill" onClick={() => window.sono.mini.toggle()}>
-            <Icon name="mini" size={15} />
-            {ui.miniOpen ? 'Close the mini player' : 'Open the mini player'}
-          </button>
-          <span className="hint">A small floating player that stays on top of other windows.</span>
-        </div>
-        <div className="chip-row">
-          {WIDGETS.map((w) => {
-            const hidden = ui.widgets.hidden.includes(w.id)
+        <div className="widget-shop">
+          {DESKTOP_WIDGETS.map((w) => {
+            const open = ui.openWidgets.includes(w.id)
             return (
-              <button
-                key={w.id}
-                className={`pill ${hidden ? '' : 'on'}`}
-                aria-pressed={!hidden}
-                onClick={() => ui.patch({ widgets: { ...ui.widgets, hidden: hidden ? ui.widgets.hidden.filter((x) => x !== w.id) : [...ui.widgets.hidden, w.id] } })}
-              >
-                <Icon name={hidden ? 'plus' : 'check'} size={14} />
-                {w.name}
+              <button key={w.id} className={`widget-tile ${open ? 'on' : ''}`} aria-pressed={open} onClick={() => window.sono.widgets.toggle(w.id)}>
+                <span className="widget-shape" style={{ aspectRatio: `${w.width} / ${w.height}` }} />
+                <strong>{w.name}</strong>
+                <small>{w.blurb}</small>
+                <span className="widget-state">{open ? 'On the desktop' : 'Add'}</span>
               </button>
             )
           })}
         </div>
-        <p className="hint">These live on Home. Rearrange them there with Customize.</p>
+        <p className="hint">
+          Small windows that float over your other apps and stay in step with the player. Drag them anywhere; the ones you leave out come back next
+          launch. On tiling window managers they float automatically — pin them with a window rule if you want them on every workspace.
+        </p>
       </div>
 
       <h2 className="section">Keyboard</h2>

@@ -90,13 +90,20 @@ kbd {
 }
 
 /* ---------- shared pieces ---------- */
+/* Panels are panes of tinted glass over the turntable behind them. */
 .panel {
-  background: rgb(var(--panel-rgb) / 0.62);
-  border: 1px solid var(--line);
+  background: linear-gradient(155deg, rgb(var(--panel-rgb) / 0.6), rgb(var(--panel-rgb) / 0.44));
+  border: 1px solid rgb(var(--text-rgb) / 0.1);
   border-radius: var(--radius);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    0 12px 40px rgb(0 0 0 / 0.16);
 }
 :root[data-mode='light'] .panel {
-  background: rgb(var(--panel-rgb) / 0.7);
+  background: linear-gradient(155deg, rgb(var(--panel-rgb) / 0.74), rgb(var(--panel-rgb) / 0.58));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.7),
+    0 12px 40px rgb(40 50 80 / 0.1);
 }
 .link {
   max-width: 100%;
@@ -458,6 +465,82 @@ kbd {
   }
   50% {
     transform: scaleY(1);
+  }
+}
+
+@keyframes buffering {
+  50% {
+    transform: scale(0.84);
+    opacity: 0.6;
+  }
+}
+.pulse.buffering .play-blob {
+  animation: buffering 0.9s ease-in-out infinite;
+}
+
+/* ---------- theme styling beyond colour ---------- */
+/* Cyberpunk: hard edges, cut corners, scanlines and a chromatic split on headings. */
+:root[data-style='cyber'] {
+  --radius: 4px;
+  --cut: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px);
+}
+[data-style='cyber'] .app::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 89;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgb(0 0 0 / 0.16) 0 1px, transparent 1px 3px);
+}
+[data-style='cyber'] .panel {
+  border-color: rgb(var(--accent-rgb) / 0.3);
+  box-shadow:
+    inset 0 0 0 1px rgb(0 240 255 / 0.07),
+    0 0 30px rgb(var(--accent-rgb) / 0.07);
+  background-image: linear-gradient(135deg, rgb(var(--accent-rgb) / 0.07), transparent 28%), linear-gradient(rgb(var(--panel-rgb) / 0.62), rgb(var(--panel-rgb) / 0.5));
+}
+[data-style='cyber'] :is(.pill, .tab, .tabs, .tabs-blob, .search, .segmented, .segmented button, .visual-picker, .visual-picker button) {
+  border-radius: 0;
+  clip-path: var(--cut);
+}
+[data-style='cyber'] :is(.nav-item, .nav-blob, .playlist-item, .track, .card-art, .hero-art, .np-art, .cover:not(.round), .badge, .setting-card, .theme, .widget-tile, .ring-sleeve, .menu, .menu-item, .eq-curve, .t-lead, .player-cover) {
+  border-radius: 2px;
+}
+[data-style='cyber'] :is(.view-head h1, .hero-text h1, .np-info h1, .ring-text h2, .section, .brand) {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  text-shadow:
+    2px 0 rgb(0 240 255 / 0.75),
+    -2px 0 rgb(255 42 109 / 0.75);
+}
+[data-style='cyber'] :is(.view-head h1, .hero-text h1, .np-info h1) {
+  animation: glitch 5s steps(1) infinite;
+}
+[data-style='cyber'] .kicker::before {
+  content: '// ';
+}
+[data-style='cyber'] .play-blob {
+  border-radius: 0 !important;
+  clip-path: polygon(22% 0, 100% 0, 100% 78%, 78% 100%, 0 100%, 0 22%);
+  animation: none;
+}
+@keyframes glitch {
+  0%,
+  92%,
+  100% {
+    transform: none;
+    clip-path: none;
+  }
+  93% {
+    transform: translateX(-3px) skewX(-6deg);
+    clip-path: inset(18% 0 42% 0);
+  }
+  95% {
+    transform: translateX(3px);
+    clip-path: inset(58% 0 8% 0);
+  }
+  97% {
+    transform: translateX(-1px) skewX(4deg);
   }
 }
 

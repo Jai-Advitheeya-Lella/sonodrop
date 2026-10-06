@@ -51,19 +51,34 @@ export interface ScanProgress {
   added?: number
 }
 
-/** What the main window tells the mini-player widget. */
-export interface MiniState {
+/** What the main window tells every desktop widget, about once a second and on every change. */
+export interface WidgetState {
+  trackId: string | null
   title: string
   artist: string
+  album: string
   coverId: string | null
+  /** e.g. "FLAC · 24-bit · 96 kHz" */
+  quality: string
+  liked: boolean
   playing: boolean
   position: number
   duration: number
+  next: { title: string; artist: string; coverId: string | null }[]
   themeId: string
   accent: [string, string, string]
+  visualizer: string
 }
 
-export type MiniCommand = 'toggle' | 'next' | 'prev' | 'show-main'
+/** Live audio for widgets that draw it: 30 times a second while one is open. */
+export interface AudioFrame {
+  /** bass, mid, treble, level, beat — each 0..1 */
+  levels: [number, number, number, number, number]
+  /** FEED_SIZE spectrum bands followed by FEED_SIZE waveform samples, 0..255 */
+  feed: number[]
+}
+
+export type WidgetCommand = 'toggle' | 'next' | 'prev' | 'like' | 'show-main'
 
 export interface SonoBridge {
   library: {
@@ -79,15 +94,25 @@ export interface SonoBridge {
     get<T>(key: string): Promise<T | undefined>
     set(key: string, value: unknown): void
   }
-  mini: {
-    toggle(): void
-    pushState(state: MiniState): void
-    onState(cb: (s: MiniState) => void): () => void
-    command(cmd: MiniCommand): void
-    onCommand(cb: (cmd: MiniCommand) => void): () => void
-    onOpenChange(cb: (open: boolean) => void): () => void
+  audio: {
+    /** Whether ffmpeg with the SoX resampler is installed. */
+    canResample(): Promise<boolean>
+    /** Start resampling a track ahead of time so it is ready when its turn comes. */
+    prepare(trackId: string, rate: number): void
+  }
+  widgets: {
+    toggle(id: string): void
+    open(): Promise<string[]>
+    onOpenChange(cb: (open: string[]) => void): () => void
+    pushState(state: WidgetState): void
+    onState(cb: (s: WidgetState) => void): () => void
+    pushAudio(frame: AudioFrame): void
+    onAudio(cb: (f: AudioFrame) => void): () => void
+    command(cmd: WidgetCommand): void
+    onCommand(cb: (cmd: WidgetCommand) => void): () => void
   }
   showInFolder(path: string): void
   pathForFile(file: File): string
-  isMini: boolean
+  /** Set in a desktop widget window: which widget this window is. */
+  widgetId: string | null
 }

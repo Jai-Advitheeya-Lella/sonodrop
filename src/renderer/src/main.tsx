@@ -3,17 +3,19 @@ import '@fontsource-variable/unbounded'
 import './styles/base.css'
 import './styles/shell.css'
 import './styles/views.css'
+import './styles/desktop.css'
 import { createRoot } from 'react-dom/client'
 import { applyTheme, themeById } from './themes'
 
 const root = createRoot(document.getElementById('root')!)
 
 async function start(): Promise<void> {
-  if (window.sono.isMini) {
-    document.documentElement.classList.add('is-mini')
+  const { widgetId } = window.sono
+  if (widgetId) {
+    document.documentElement.classList.add('is-widget')
     applyTheme(themeById(''))
-    const { MiniApp } = await import('./MiniApp')
-    root.render(<MiniApp />)
+    const { WidgetApp } = await import('./desktop/WidgetApp')
+    root.render(<WidgetApp id={widgetId} />)
     return
   }
   // The main window owns the audio engine and all state; load it only here.

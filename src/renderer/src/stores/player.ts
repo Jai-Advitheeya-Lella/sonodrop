@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { engine } from '@/audio/engine'
+import { deviceRate, engine } from '@/audio/engine'
 import { coverUrl } from '@/lib/format'
 import { trackById, useLibrary } from './library'
 import { useUi } from './ui'
@@ -20,7 +20,11 @@ export interface Session {
 interface PlayerState extends Session {
   currentId: string | null
   playing: boolean
+  /** Waiting for audio: loading, seeking, or being resampled. */
+  buffering: boolean
   duration: number
+  /** Load the current track again where it is, after the engine or its settings changed. */
+  reload(): void
   restore(session: Partial<Session> | undefined, position: number): void
   /** Replace the queue with these tracks and start at `start`. */
   playTracks(ids: string[], start?: number): void
@@ -53,6 +57,15 @@ let counted = false
 let failures = 0
 let artworkUrl = ''
 
+/** The rate tracks are SoX-resampled to (and the audio graph runs at), or null when resampling is off. */
+export function resampleRate(): number | null {
+  const { resample, canResample } = useUi.getState()
+  if (resample === 'off' || !canResample) return null
+  return resample === 'device' ? deviceRate() : resample
+}
+
+const mediaUrl = (id: string, rate: number | null): string => `sono://media/${id}${rate ? `?sr=${rate}` : ''}`
+
 export const usePlayer = create<PlayerState>((set, get) => {
   /** Point the audio element at queue[index]. */
   function load(autoplay: boolean, position = 0): void {
@@ -60,10 +73,14 @@ export const usePlayer = create<PlayerState>((set, get) => {
     const track = trackById(queue[index])
     if (!track) return
     counted = false
-    engine.load(`sono://media/${track.id}`)
+    const rate = resampleRate()
+    engine.setOutputRate(rate)
+    engine.load(mediaUrl(track.id, rate))
     if (position > 0) engine.el.currentTime = position
-    set({ currentId: track.id, duration: track.duration })
+    set({ currentId: track.id, duration: track.duration, buffering: autoplay })
     if (autoplay) void engine.play()
+    // Get the next track resampled while this one plays, so the hand-over doesn't wait.
+    if (rate && queue[index + 1]) window.sono.audio.prepare(queue[index + 1], rate)
 
     const describe = (artwork: MediaImage[]): void => {
       navigator.mediaSession.metadata = new MediaMetadata({ title: track.title, artist: track.artist, album: track.album, artwork })
@@ -98,7 +115,14 @@ export const usePlayer = create<PlayerState>((set, get) => {
     repeat: 'off',
     currentId: null,
     playing: false,
+    buffering: false,
     duration: 0,
+
+    reload: () => {
+      if (!get().currentId) return
+      const position = engine.el.currentTime
+      load(!engine.el.paused, position)
+    },
 
     restore: (session, position) => {
       const queue = known(session?.queue ?? [])
@@ -260,37 +284,39 @@ export const usePlayer = create<PlayerState>((set, get) => {
 })
 
 // The audio element is the source of truth for transport state.
-const el = engine.el
-el.addEventListener('play', () => {
+engine.on('play', () => {
   usePlayer.setState({ playing: true })
   navigator.mediaSession.playbackState = 'playing'
 })
-el.addEventListener('pause', () => {
-  usePlayer.setState({ playing: false })
+engine.on('pause', () => {
+  usePlayer.setState({ playing: false, buffering: false })
   navigator.mediaSession.playbackState = 'paused'
 })
-el.addEventListener('playing', () => {
+engine.on('waiting', () => usePlayer.setState({ buffering: true }))
+engine.on('playing', () => {
   failures = 0
+  usePlayer.setState({ buffering: false })
 })
-el.addEventListener('ended', () => usePlayer.getState().next(true))
-el.addEventListener('durationchange', () => {
-  if (Number.isFinite(el.duration) && el.duration > 0) usePlayer.setState({ duration: el.duration })
+engine.on('ended', () => usePlayer.getState().next(true))
+engine.on('durationchange', () => {
+  const { duration } = engine.el
+  if (Number.isFinite(duration) && duration > 0) usePlayer.setState({ duration })
 })
-el.addEventListener('timeupdate', () => {
+engine.on('timeupdate', () => {
   // Count a play once it has really been listened to.
   const { currentId, duration } = usePlayer.getState()
-  if (!counted && currentId && el.currentTime > Math.min(30, (duration || 60) / 2)) {
+  if (!counted && currentId && engine.el.currentTime > Math.min(30, (duration || 60) / 2)) {
     counted = true
     useUser.getState().recordPlay(currentId)
   }
 })
-el.addEventListener('error', () => {
-  if (!el.getAttribute('src')) return
+engine.on('error', () => {
+  if (!engine.el.getAttribute('src')) return
   const { currentId, queue, index, next } = usePlayer.getState()
   useUi.getState().toast(`Can't play “${trackById(currentId)?.title ?? 'this file'}”`)
   failures++
   if (failures < 4 && index + 1 < queue.length) next()
-  else usePlayer.setState({ playing: false })
+  else usePlayer.setState({ playing: false, buffering: false })
 })
 
 const actions: [MediaSessionAction, () => void][] = [

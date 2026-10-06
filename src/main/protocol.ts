@@ -2,9 +2,11 @@ import { protocol } from 'electron'
 import { createReadStream, promises as fs } from 'node:fs'
 import { extname } from 'node:path'
 import type { Library } from './library'
+import type { Resampler } from './resampler'
 
 /**
  * sono://media/<trackId>  audio, with range support so seeking works
+ *   …?sr=96000            the same track, SoX-resampled to that rate
  * sono://cover/<coverId>  full-size artwork
  * sono://thumb/<coverId>  thumbnail artwork
  *
@@ -43,7 +45,7 @@ function imageType(buf: Buffer): string {
   return 'image/jpeg'
 }
 
-async function serveMedia(file: string, request: Request): Promise<Response> {
+async function serveMedia(file: string, request: Request, type?: string): Promise<Response> {
   const { size } = await fs.stat(file)
   const range = /bytes=(\d*)-(\d*)/.exec(request.headers.get('range') ?? '')
   let start = 0
@@ -90,7 +92,7 @@ async function serveMedia(file: string, request: Request): Promise<Response> {
     status: range ? 206 : 200,
     headers: {
       ...CORS,
-      'Content-Type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream',
+      'Content-Type': type ?? MIME[extname(file).toLowerCase()] ?? 'application/octet-stream',
       'Content-Length': String(end - start + 1),
       'Accept-Ranges': 'bytes',
       ...(range ? { 'Content-Range': `bytes ${start}-${end}/${size}` } : {})
@@ -98,13 +100,18 @@ async function serveMedia(file: string, request: Request): Promise<Response> {
   })
 }
 
-export function handleScheme(library: Library): void {
+export function handleScheme(library: Library, resampler: Resampler): void {
   protocol.handle(SCHEME, async (request) => {
     try {
       const url = new URL(request.url)
       const id = decodeURIComponent(url.pathname.slice(1))
       if (url.host === 'media') {
         const track = library.track(id)
+        const rate = Number(url.searchParams.get('sr'))
+        if (track && rate > 0) {
+          const file = await resampler.fileFor(track, rate)
+          return await serveMedia(file, request, file === track.path ? undefined : 'audio/wav')
+        }
         if (track) return await serveMedia(track.path, request)
       } else if ((url.host === 'cover' || url.host === 'thumb') && /^[a-f0-9]+$/.test(id)) {
         const buf = await fs.readFile(library.coverFile(id, url.host === 'thumb'))

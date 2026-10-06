@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
-import { engine, levels } from '@/audio/engine'
+import { DESKTOP_WIDGETS } from '@shared/widgets'
+import { engine } from '@/audio/engine'
+import { levels } from '@/audio/levels'
 import { clamp, formatTime, quality } from '@/lib/format'
 import { useCurrentTrack, useFrame, useSlider } from '@/lib/hooks'
 import { onFrame } from '@/lib/ticker'
@@ -254,6 +256,7 @@ export function LikeButton({ id, size = 18 }: { id: string; size?: number }): Re
 
 export function Transport({ size = 'md' }: { size?: 'md' | 'lg' }): React.JSX.Element {
   const playing = usePlayer((s) => s.playing)
+  const buffering = usePlayer((s) => s.buffering)
   const shuffle = usePlayer((s) => s.shuffle)
   const repeat = usePlayer((s) => s.repeat)
   const player = usePlayer.getState()
@@ -267,7 +270,7 @@ export function Transport({ size = 'md' }: { size?: 'md' | 'lg' }): React.JSX.El
     <div className={`transport ${size}`}>
       <IconButton icon="shuffle" label="Shuffle" on={shuffle} onClick={player.toggleShuffle} />
       <IconButton icon="prev" label="Previous" size={icon} onClick={player.prev} />
-      <div ref={pulse} className="pulse">
+      <div ref={pulse} className={`pulse ${buffering ? 'buffering' : ''}`}>
         <PlayBlob playing={playing} onClick={player.toggle} size={size} />
       </div>
       <IconButton icon="next" label="Next" size={icon} onClick={() => player.next()} />
@@ -279,7 +282,8 @@ export function Transport({ size = 'md' }: { size?: 'md' | 'lg' }): React.JSX.El
 export function PlayerBar(): React.JSX.Element {
   const track = useCurrentTrack()
   const queueOpen = useUi((s) => s.queueOpen)
-  const miniOpen = useUi((s) => s.miniOpen)
+  const openWidgets = useUi((s) => s.openWidgets)
+  const eqOn = useUi((s) => s.eq.on)
   const ui = useUi.getState()
   return (
     <footer className="player panel">
@@ -318,7 +322,23 @@ export function PlayerBar(): React.JSX.Element {
         <TimeLabel part="both" />
         <Volume />
         <IconButton icon="queue" label="Queue" on={queueOpen} onClick={() => useUi.setState({ queueOpen: !queueOpen })} />
-        <IconButton icon="mini" label="Mini player widget" on={miniOpen} onClick={() => window.sono.mini.toggle()} />
+        <IconButton icon="eq" label="Sound & equaliser" on={eqOn} onClick={() => ui.go({ name: 'sound' })} />
+        <IconButton
+          icon="widgets"
+          label="Desktop widgets"
+          on={openWidgets.length > 0}
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            ui.openMenu(
+              { clientX: rect.right - 228, clientY: rect.top - 12 - DESKTOP_WIDGETS.length * 36, preventDefault: () => {} },
+              DESKTOP_WIDGETS.map((w) => ({
+                label: w.name,
+                icon: openWidgets.includes(w.id) ? 'check' : undefined,
+                action: () => window.sono.widgets.toggle(w.id)
+              }))
+            )
+          }}
+        />
         <IconButton icon="cube" label="Now Playing" onClick={() => useUi.setState({ nowPlayingOpen: true })} />
       </div>
     </footer>

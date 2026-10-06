@@ -1,26 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Icon } from '@/components/Icon'
 import { allTrackIds } from '@/components/menus'
-import { greeting } from '@/lib/actions'
 import { formatLength } from '@/lib/format'
 import { useCurrentTrack } from '@/lib/hooks'
 import { useLibrary } from '@/stores/library'
-import { usePlayer } from '@/stores/player'
-
-export function ClockWidget(): React.JSX.Element {
-  const [now, setNow] = useState(() => new Date())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 5000)
-    return () => clearInterval(timer)
-  }, [])
-  return (
-    <div className="w-clock">
-      <strong>{now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</strong>
-      <span>{now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</span>
-      <small>{greeting()}</small>
-    </div>
-  )
-}
+import { resampleRate, usePlayer } from '@/stores/player'
+import { useUi } from '@/stores/ui'
 
 export function QuickPourWidget(): React.JSX.Element {
   const albums = useLibrary((s) => s.albums)
@@ -96,6 +81,10 @@ export function StatsWidget(): React.JSX.Element {
 
 export function SignalWidget(): React.JSX.Element {
   const track = useCurrentTrack()
+  const eq = useUi((s) => s.eq.on)
+  // Re-read the target rate whenever the resampling setting changes.
+  useUi((s) => s.resample)
+  const resampled = resampleRate()
   if (!track) {
     return (
       <div className="w-signal idle">
@@ -129,6 +118,18 @@ export function SignalWidget(): React.JSX.Element {
         )}
         <dt>Size</dt>
         <dd>{(track.size / 1_048_576).toFixed(1)} MB</dd>
+        {resampled && resampled !== track.sampleRate && (
+          <>
+            <dt>SoX</dt>
+            <dd>→ {+(resampled / 1000).toFixed(1)} kHz</dd>
+          </>
+        )}
+        {eq && (
+          <>
+            <dt>EQ</dt>
+            <dd>On</dd>
+          </>
+        )}
       </dl>
     </div>
   )

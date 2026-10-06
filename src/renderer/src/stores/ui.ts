@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { EQ_FLAT, type EqSettings } from '@/audio/engine'
 import type { IconName } from '@/components/Icon'
 import type { AlbumSort, ArtistSort, SongSort, SortState } from '@/lib/sort'
 import { DEFAULT_THEME } from '@/themes'
@@ -9,12 +10,16 @@ export type Route =
   | { name: 'search' }
   | { name: 'liked' }
   | { name: 'settings' }
+  | { name: 'sound' }
   | { name: 'album'; id: string }
   | { name: 'artist'; id: string }
   | { name: 'playlist'; id: string }
 
 export type LibraryTab = 'songs' | 'albums' | 'artists'
 export type Quality = 'auto' | 'high' | 'medium' | 'low'
+export type AlbumView = 'grid' | 'record'
+/** 'off': leave it to Chromium. 'device': SoX-convert straight to the device's rate. A number: that rate in Hz. */
+export type Resample = 'off' | 'device' | number
 
 export interface MenuItem {
   label: string
@@ -38,8 +43,11 @@ export interface Settings {
   ambient: boolean
   splashes: boolean
   libraryTab: LibraryTab
+  albumView: AlbumView
   sort: { songs: SortState<SongSort>; albums: SortState<AlbumSort>; artists: SortState<ArtistSort> }
-  widgets: { order: string[]; hidden: string[] }
+  visualizer: string
+  eq: EqSettings
+  resample: Resample
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -48,12 +56,15 @@ export const DEFAULT_SETTINGS: Settings = {
   ambient: true,
   splashes: true,
   libraryTab: 'albums',
+  albumView: 'record',
+  visualizer: 'ink',
+  eq: EQ_FLAT,
+  resample: 'off',
   sort: {
     songs: { by: 'title', dir: 'asc' },
     albums: { by: 'dateAdded', dir: 'desc' },
     artists: { by: 'name', dir: 'asc' }
-  },
-  widgets: { order: [], hidden: [] }
+  }
 }
 
 interface UiState extends Settings {
@@ -63,7 +74,10 @@ interface UiState extends Settings {
   query: string
   queueOpen: boolean
   nowPlayingOpen: boolean
-  miniOpen: boolean
+  /** Desktop widgets currently on screen. */
+  openWidgets: string[]
+  /** ffmpeg with the SoX resampler is installed. */
+  canResample: boolean
   menu: { x: number; y: number; items: MenuItem[] } | null
   toasts: Toast[]
   hydrate(settings: Partial<Settings> | undefined): void
@@ -87,14 +101,15 @@ export const useUi = create<UiState>((set, get) => ({
   query: '',
   queueOpen: false,
   nowPlayingOpen: false,
-  miniOpen: false,
+  openWidgets: [],
+  canResample: false,
   menu: null,
   toasts: [],
   hydrate: (settings) =>
     set({
       ...settings,
       sort: { ...DEFAULT_SETTINGS.sort, ...settings?.sort },
-      widgets: { ...DEFAULT_SETTINGS.widgets, ...settings?.widgets }
+      eq: { ...EQ_FLAT, ...settings?.eq }
     }),
   patch: (settings) => set(settings),
   go: (route) => {
@@ -133,6 +148,9 @@ export const settingsOf = (s: UiState): Settings => ({
   ambient: s.ambient,
   splashes: s.splashes,
   libraryTab: s.libraryTab,
+  albumView: s.albumView,
   sort: s.sort,
-  widgets: s.widgets
+  visualizer: s.visualizer,
+  eq: s.eq,
+  resample: s.resample
 })

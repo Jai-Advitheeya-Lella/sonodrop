@@ -1,17 +1,17 @@
 import { useEffect, useRef } from 'react'
-import { levels } from '@/audio/engine'
+import { levels, transport } from '@/audio/levels'
 import { onFrame } from '@/lib/ticker'
 import { useUi, type Quality } from '@/stores/ui'
 import { palette } from '@/themes'
 import { AdaptiveScale, createShaderCanvas, ease } from './gl'
 import { AMBIENT } from './shaders'
 
-/** Fraction of CSS resolution. The image is soft by design, so it can be very low. */
+/** Fraction of device resolution. The record's grooves want real pixels; the liquid behind them doesn't mind. */
 const SCALE: Record<Quality, [min: number, max: number]> = {
-  auto: [0.22, 0.6],
-  high: [0.6, 0.6],
-  medium: [0.42, 0.42],
-  low: [0.28, 0.28]
+  auto: [0.4, 1],
+  high: [1, 1],
+  medium: [0.7, 0.7],
+  low: [0.45, 0.45]
 }
 
 /** The living backdrop behind the whole app. `paused` freezes it while something opaque covers it. */
@@ -47,6 +47,9 @@ export function AmbientLiquid({ paused }: { paused: boolean }): React.JSX.Elemen
     const colors = { bg: [...palette.bg], a: [...palette.a], b: [...palette.b], c: [...palette.c] }
     let light = palette.light
     let flow = Math.random() * 100
+    let spin = 0
+    let speed = 0
+    let arm = 0
     const adaptive = new AdaptiveScale(...SCALE[quality])
 
     const stop = onFrame((dt, now) => {
@@ -65,8 +68,18 @@ export function AmbientLiquid({ paused }: { paused: boolean }): React.JSX.Elemen
       const active = performance.now() - movedAt < 1800 ? 1 : 0
       mouse[2] += (active - mouse[2]) * Math.min(1, dt * (active ? 4 : 1.2))
 
-      shader.size(width, height, adaptive.scale)
+      // The platter takes a moment to get up to speed, and to stop.
+      speed += ((transport.playing ? 2.2 : 0) - speed) * Math.min(1, dt * 1.6)
+      spin = (spin + speed * dt) % (Math.PI * 2)
+      arm += ((transport.playing ? 1 : 0) - arm) * Math.min(1, dt * 2.2)
+
+      const aspect = width / Math.max(1, height)
+      shader.size(width, height, Math.min(window.devicePixelRatio, 2) * adaptive.scale)
       shader.draw({
+        // Right of centre, but never so far that the tonearm's pivot leaves the window.
+        uDisc: [Math.min(aspect * 0.5 + Math.min(0.42, aspect * 0.21), aspect - 0.55), 0.47, 0.44],
+        uSpin: spin,
+        uArm: [arm, transport.progress],
         uRes: [canvas.width, canvas.height],
         uTime: flow,
         uBg: colors.bg,

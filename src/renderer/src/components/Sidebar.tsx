@@ -8,6 +8,7 @@ const NAV: { route: Route; label: string; icon: IconName }[] = [
   { route: { name: 'home' }, label: 'Home', icon: 'home' },
   { route: { name: 'library' }, label: 'Library', icon: 'library' },
   { route: { name: 'liked' }, label: 'Liked Songs', icon: 'heart' },
+  { route: { name: 'sound' }, label: 'Sound & EQ', icon: 'eq' },
   { route: { name: 'settings' }, label: 'Themes & Settings', icon: 'settings' }
 ]
 

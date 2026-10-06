@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { widgetById } from '@shared/widgets'
 import { engine } from '@/audio/engine'
+import { feed, levels } from '@/audio/levels'
 import { NowPlaying } from '@/components/NowPlaying'
 import { ContextMenu, DropOverlay, Toasts } from '@/components/Overlays'
 import { PlayerBar } from '@/components/Player'
@@ -12,8 +14,9 @@ import { attachCurtain } from '@/fluid/curtain'
 import { GooDefs } from '@/fluid/Goo'
 import { SplashLayer } from '@/fluid/SplashLayer'
 import { extractPalette } from '@/lib/color'
-import { clamp, coverUrl } from '@/lib/format'
+import { clamp, coverUrl, quality } from '@/lib/format'
 import { useCurrentTrack } from '@/lib/hooks'
+import { onFrame } from '@/lib/ticker'
 import { trackById } from '@/stores/library'
 import { usePlayer } from '@/stores/player'
 import { useUi, type Route } from '@/stores/ui'
@@ -24,6 +27,7 @@ import { Home } from '@/views/Home'
 import { LibraryView } from '@/views/Library'
 import { SearchView } from '@/views/Search'
 import { Settings } from '@/views/Settings'
+import { Sound } from '@/views/Sound'
 
 function View({ route }: { route: Route }): React.JSX.Element {
   switch (route.name) {
@@ -37,6 +41,8 @@ function View({ route }: { route: Route }): React.JSX.Element {
       return <PlaylistView />
     case 'settings':
       return <Settings />
+    case 'sound':
+      return <Sound />
     case 'album':
       return <AlbumView id={route.id} />
     case 'artist':
@@ -150,44 +156,71 @@ function useShortcuts(): void {
   }, [])
 }
 
-/** Feed the mini player window and obey its buttons. */
-function useMiniBridge(): void {
+/** Keep the desktop widgets fed — track info on every change, live audio 30 times a second — and obey their buttons. */
+function useWidgetBridge(): void {
   useEffect(() => {
-    const { mini } = window.sono
+    const { widgets } = window.sono
     const push = (): void => {
-      if (!useUi.getState().miniOpen) return
+      const ui = useUi.getState()
+      if (ui.openWidgets.length === 0) return
       const player = usePlayer.getState()
       const track = trackById(player.currentId)
       const root = document.documentElement.style
-      mini.pushState({
+      widgets.pushState({
+        trackId: track?.id ?? null,
         title: track?.title ?? 'Sonodrop',
-        artist: track?.artist ?? '',
+        artist: track?.artist ?? 'Nothing playing',
+        album: track?.album ?? '',
         coverId: track?.coverId ?? null,
+        quality: track ? quality(track) : '',
+        liked: !!track && useUser.getState().liked.includes(track.id),
         playing: player.playing,
         position: engine.el.currentTime,
         duration: player.duration,
-        themeId: useUi.getState().themeId,
-        accent: [root.getPropertyValue('--accent'), root.getPropertyValue('--accent-2'), root.getPropertyValue('--accent-3')]
+        next: player.queue.slice(player.index + 1, player.index + 5).flatMap((id) => {
+          const t = trackById(id)
+          return t ? [{ title: t.title, artist: t.artist, coverId: t.coverId }] : []
+        }),
+        themeId: ui.themeId,
+        accent: [root.getPropertyValue('--accent'), root.getPropertyValue('--accent-2'), root.getPropertyValue('--accent-3')],
+        visualizer: ui.visualizer
       })
     }
-    const offOpen = mini.onOpenChange((open) => {
-      useUi.setState({ miniOpen: open })
+    const offOpen = widgets.onOpenChange((open) => {
+      useUi.setState({ openWidgets: open })
       push()
     })
-    const offCommand = mini.onCommand((command) => {
+    const offCommand = widgets.onCommand((command) => {
       const player = usePlayer.getState()
       if (command === 'toggle') player.toggle()
       else if (command === 'next') player.next()
       else if (command === 'prev') player.prev()
+      else if (command === 'like' && player.currentId) useUser.getState().toggleLike(player.currentId)
     })
     const offPlayer = usePlayer.subscribe(push)
-    engine.el.addEventListener('seeked', push)
+    const offUser = useUser.subscribe(push)
+    const offUi = useUi.subscribe((state, prev) => {
+      // Theme colours land in the DOM a moment after the setting changes.
+      if (state.themeId !== prev.themeId || state.visualizer !== prev.visualizer) window.setTimeout(push, 60)
+    })
+    engine.on('seeked', push)
     const timer = window.setInterval(push, 1000)
+
+    let since = 0
+    const stopAudio = onFrame((dt) => {
+      since += dt
+      if (since < 1 / 30) return
+      since = 0
+      const wanted = useUi.getState().openWidgets.some((id) => widgetById(id)?.audio)
+      if (wanted) widgets.pushAudio({ levels: [levels.bass, levels.mid, levels.treble, levels.level, levels.beat], feed: Array.from(feed) })
+    })
     return () => {
       offOpen()
       offCommand()
       offPlayer()
-      engine.el.removeEventListener('seeked', push)
+      offUser()
+      offUi()
+      stopAudio()
       window.clearInterval(timer)
     }
   }, [])
@@ -201,7 +234,7 @@ export function App(): React.JSX.Element {
   const [scroller, setScroller] = useState<HTMLElement | null>(null)
   useThemeSync()
   useShortcuts()
-  useMiniBridge()
+  useWidgetBridge()
 
   // Once Now Playing has risen over everything, stop drawing the backdrop underneath it.
   const [covered, setCovered] = useState(false)

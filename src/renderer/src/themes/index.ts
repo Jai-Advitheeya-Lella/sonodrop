@@ -18,6 +18,8 @@ export interface Theme {
   gloss: number
   /** Take the accents from the artwork of whatever is playing. */
   dynamic?: boolean
+  /** Extra styling beyond colour; see the [data-style] rules in styles/base.css. */
+  style?: 'cyber'
 }
 
 export const THEMES: Theme[] = [
@@ -28,6 +30,7 @@ export const THEMES: Theme[] = [
   { id: 'ultraviolet', name: 'Ultraviolet', tagline: 'Blacklight syrup', mode: 'dark', bg: '#090312', panel: '#150a27', text: '#f4eaff', accent: ['#c44dff', '#ff3d9a', '#6d5cff'], gloss: 0.7 },
   { id: 'honey', name: 'Honey', tagline: 'Thick, warm, golden', mode: 'dark', bg: '#0c0703', panel: '#1b1208', text: '#fff4dc', accent: ['#ffb629', '#ff8a2a', '#ffe08a'], gloss: 0.6 },
   { id: 'vapor', name: 'Vapor', tagline: 'Neon on wet asphalt', mode: 'dark', bg: '#080516', panel: '#130d2a', text: '#f0eaff', accent: ['#ff71ce', '#01cdfe', '#b967ff'], gloss: 0.8 },
+  { id: 'cyberpunk', name: 'Cyberpunk', tagline: 'Neon, chrome and rain', mode: 'dark', bg: '#07020f', panel: '#120a22', text: '#eafcff', accent: ['#fcee0a', '#00f0ff', '#ff2a6d'], gloss: 0.95, style: 'cyber' },
   { id: 'ink', name: 'Ink', tagline: 'True black, one drop of red', mode: 'dark', bg: '#000000', panel: '#0c0c0d', text: '#f5f5f5', accent: ['#ff3b3b', '#f2f2f2', '#ff8a8a'], gloss: 0.9 },
   { id: 'glacier', name: 'Glacier', tagline: 'Meltwater daylight', mode: 'light', bg: '#d9e6f2', panel: '#f5f9fd', text: '#0d2233', accent: ['#0a7cff', '#00a9b8', '#5b6cff'], gloss: 0.8 },
   { id: 'rose', name: 'Rosé', tagline: 'Soft and sparkling', mode: 'light', bg: '#f3dedb', panel: '#fff6f3', text: '#3a1620', accent: ['#e3356a', '#ff7a4d', '#a23bd6'], gloss: 0.7 },
@@ -70,6 +73,7 @@ export function applyTheme(theme: Theme, accents: [string, string, string] = the
   }
   for (const [key, value] of Object.entries(vars)) root.style.setProperty(key, value)
   root.dataset.mode = theme.mode
+  root.dataset.style = theme.style ?? ''
   root.style.colorScheme = theme.mode
 
   palette.bg = vec(theme.bg)
