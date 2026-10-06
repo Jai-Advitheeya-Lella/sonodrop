@@ -22,6 +22,14 @@ export interface Track {
   sampleRate: number | null
   bitDepth: number | null
   lossless: boolean
+  /** Channels in the file: 2 for stereo, 6 for 5.1 … */
+  channels: number | null
+  /** The built-in decoder can play this file as it is; otherwise it goes through ffmpeg first. */
+  native: boolean
+  /** Title or artist came from the file/folder name because the tags were missing. */
+  guessed: boolean
+  /** Details or artwork were filled in from an online lookup. */
+  online?: boolean
   coverId: string | null
   /** ms since epoch */
   dateAdded: number
@@ -30,7 +38,7 @@ export interface Track {
 }
 
 /** Bump when the scanner starts recording something new; existing libraries are then re-read on next launch. */
-export const LIBRARY_VERSION = 2
+export const LIBRARY_VERSION = 3
 
 export interface LibraryFile {
   version: number
@@ -45,10 +53,37 @@ export interface LibrarySnapshot {
 }
 
 export interface ScanProgress {
-  phase: 'listing' | 'reading' | 'done'
+  /** 'online' is the lookup of missing details and artwork that follows a scan. */
+  phase: 'listing' | 'reading' | 'online' | 'done'
   done: number
   total: number
   added?: number
+}
+
+/** The sound device the system is currently playing through. */
+export interface OutputDevice {
+  name: string
+  description: string
+  channels: number
+  /** One PulseAudio/PipeWire position name per channel, e.g. front-left, lfe, rear-right. */
+  map: string[]
+  rate: number
+}
+
+export interface AudioCapabilities {
+  /** ffmpeg is installed: formats the built-in decoder can't read will play. */
+  decode: boolean
+  /** …and it has the SoX resampler. */
+  resample: boolean
+  /** A way to send more than two channels (or a non-device sample rate) straight to the sound server. */
+  direct: boolean
+}
+
+/** What the renderer asks the main process to open for direct output. */
+export interface SinkSpec {
+  rate: number
+  channels: number
+  map: string[]
 }
 
 /** What the main window tells every desktop widget, about once a second and on every change. */
@@ -95,10 +130,22 @@ export interface SonoBridge {
     set(key: string, value: unknown): void
   }
   audio: {
-    /** Whether ffmpeg with the SoX resampler is installed. */
-    canResample(): Promise<boolean>
-    /** Start resampling a track ahead of time so it is ready when its turn comes. */
+    capabilities(): Promise<AudioCapabilities>
+    /** Start converting a track ahead of time so it is ready when its turn comes. `rate` 0 keeps its own. */
     prepare(trackId: string, rate: number): void
+    output(): Promise<OutputDevice | null>
+    onOutputChange(cb: (device: OutputDevice | null) => void): () => void
+    /**
+     * Close the direct output. (It is opened by posting `{ sonoSink: SinkSpec }` to the window together with the
+     * MessagePort the audio thread writes to — ports can't cross this bridge as arguments.)
+     */
+    closeSink(): void
+  }
+  online: {
+    /** Allow or forbid looking up missing details and artwork on the internet. */
+    setEnabled(enabled: boolean): void
+    /** Look again now, including for things that weren't found before. */
+    retry(): void
   }
   widgets: {
     toggle(id: string): void

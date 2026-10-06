@@ -1,5 +1,9 @@
+import type { OutputDevice } from '@shared/types'
 import { onFrame } from '@/lib/ticker'
 import { feed, FEED_SIZE, levels, transport } from './levels'
+import { createRouter, SPEAKER_DEFAULTS, type Router, type SpeakerSettings } from './router'
+// A real file, never an inlined data: URL — the content security policy only lets scripts load from the app itself.
+import tapUrl from './tap.worklet.js?url&no-inline'
 
 const FFT = 2048
 
@@ -56,13 +60,54 @@ export function deviceRate(): number {
   return cachedDeviceRate
 }
 
+/** Everything about the output that needs a fresh audio graph when it changes. */
+export interface OutputPlan {
+  /** Sample rate of the graph; null follows the device. */
+  rate: number | null
+  /** Send the finished audio straight to the sound server in this layout, instead of through the built-in (stereo) output. */
+  direct: { map: string[] } | null
+  /** Channels in the file being played. */
+  sourceChannels: number
+  speakers: SpeakerSettings
+}
+
+const STEREO_PLAN: OutputPlan = { rate: null, direct: null, sourceChannels: 2, speakers: SPEAKER_DEFAULTS }
+
+/** The parts of a plan that can't be changed on a running graph. */
+const shape = (p: OutputPlan): string =>
+  JSON.stringify([p.rate, p.direct?.map, p.direct ? [p.sourceChannels > 2 ? p.sourceChannels : 2, p.speakers.mode, p.speakers.sub, p.speakers.cutMains] : 0])
+
+/** The direct output buffers a little before the speakers get it; the visuals wait the same amount. */
+const DIRECT_LATENCY = 0.14
+
+/** Decide how to play, given the device, the settings and the file. */
+export function planOutput(options: {
+  rate: number | null
+  device: OutputDevice | null
+  canDirect: boolean
+  speakers: SpeakerSettings
+  sourceChannels: number
+}): OutputPlan {
+  const { rate, device, canDirect, speakers, sourceChannels } = options
+  let direct: OutputPlan['direct'] = null
+  if (device && canDirect) {
+    const surround = device.channels > 2 && speakers.mode !== 'stereo'
+    // The built-in output always converts to the device's rate; going direct keeps the rate that was asked for.
+    const offRate = rate !== null && rate !== device.rate
+    if (surround) direct = { map: device.map }
+    else if (offRate) direct = { map: device.channels <= 2 ? device.map : ['front-left', 'front-right'] }
+  }
+  return { rate, direct, sourceChannels, speakers }
+}
+
 /**
  * Playback and analysis.
  *
  *   <audio> → preamp → 10 EQ filters ─┬→ analyser (visuals; before volume, so they don't shrink when it's quiet)
- *                                     └→ volume → speakers
+ *                                     └→ volume ─┬→ built-in output (stereo)
+ *                                                └→ router → tap → main process → sound server (surround / other rates)
  *
- * The audio element and context are replaced when the output sample rate changes, so listeners are
+ * The audio element and context are replaced when the plan changes shape, so listeners are
  * registered through on() and survive the swap.
  */
 class AudioEngine {
@@ -76,7 +121,8 @@ class AudioEngine {
   private readonly spectrum = new Uint8Array(FFT / 2)
   private readonly wave = new Uint8Array(FFT)
   private bandEdges: number[] = []
-  private rate: number | null = null
+  private plan: OutputPlan = STEREO_PLAN
+  private router: Router | null = null
   private volume = 1
   private eq: EqSettings = EQ_FLAT
   private bassAvg = 0
@@ -101,24 +147,29 @@ class AudioEngine {
     this.el.addEventListener(type, handler)
   }
 
-  /** The rate the audio graph runs at; null follows the device. */
-  get outputRate(): number | null {
-    return this.rate
+  /** Whether applying this plan would need a new audio graph (and so a reload of the current track). */
+  needsRebuild(plan: OutputPlan): boolean {
+    return shape(plan) !== shape(this.plan)
   }
 
   /**
-   * Run the audio graph at a different sample rate. Returns true when the engine was rebuilt,
+   * Apply an output plan. Returns true when the engine had to be rebuilt,
    * in which case whatever was loaded is gone and must be loaded again.
    */
-  setOutputRate(rate: number | null): boolean {
-    if (rate === this.rate) return false
-    this.rate = rate
+  configure(plan: OutputPlan): boolean {
+    const rebuild = this.needsRebuild(plan)
+    this.plan = plan
+    if (!rebuild) {
+      this.router?.tune(plan.speakers)
+      return false
+    }
     for (const [type, handler] of this.handlers) this.el.removeEventListener(type, handler)
     this.el.pause()
     this.el.removeAttribute('src')
     this.el.load()
     void this.ctx?.close()
-    this.ctx = this.volumeNode = this.preampNode = this.analyser = null
+    if (this.router) window.sono.audio.closeSink()
+    this.ctx = this.volumeNode = this.preampNode = this.analyser = this.router = null
     this.filters = []
     this.el = this.createElement()
     for (const [type, handler] of this.handlers) this.el.addEventListener(type, handler)
@@ -127,8 +178,9 @@ class AudioEngine {
 
   private graph(): void {
     if (this.ctx) return
+    const { rate, direct, sourceChannels, speakers } = this.plan
     try {
-      this.ctx = new AudioContext({ latencyHint: 'playback', ...(this.rate ? { sampleRate: this.rate } : {}) })
+      this.ctx = new AudioContext({ latencyHint: 'playback', ...(rate ? { sampleRate: rate } : {}) })
     } catch {
       // A rate the platform refuses: fall back to the device's own.
       this.ctx = new AudioContext({ latencyHint: 'playback' })
@@ -145,8 +197,44 @@ class AudioEngine {
 
     let node: AudioNode = source.connect(this.preampNode)
     for (const filter of this.filters) node = node.connect(filter)
-    node.connect(this.analyser)
-    node.connect(this.volumeNode).connect(ctx.destination)
+    node.connect(this.volumeNode)
+
+    if (direct) {
+      const map = direct.map
+      this.router = createRouter(ctx, this.volumeNode, sourceChannels, map, speakers)
+      const spec = { rate: ctx.sampleRate, channels: map.length, map }
+      void ctx.audioWorklet.addModule(tapUrl).then(() => {
+        if (this.ctx !== ctx || !this.router) return
+        const tap = new AudioWorkletNode(ctx, 'sono-tap', {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          channelCount: map.length,
+          channelCountMode: 'explicit',
+          channelInterpretation: 'discrete',
+          // About 20 ms a chunk, in whole render quanta.
+          processorOptions: { channels: map.length, chunk: 128 * Math.max(1, Math.round((ctx.sampleRate * 0.02) / 128)) }
+        })
+        this.router.output.connect(tap)
+        // The tap makes no sound itself; a muted link to the built-in output keeps the graph's clock tied to the device.
+        const silent = ctx.createGain()
+        silent.gain.value = 0
+        tap.connect(silent).connect(ctx.destination)
+        // One end of a channel goes to the audio thread, the other (via the preload) to the main process.
+        const channel = new MessageChannel()
+        tap.port.postMessage({ port: channel.port1 }, [channel.port1])
+        window.postMessage({ sonoSink: spec }, '*', [channel.port2])
+      }).catch((err) => {
+        // Better stereo than silence.
+        console.error('[audio] direct output unavailable, falling back to the built-in output', err)
+        if (this.ctx === ctx) this.volumeNode?.connect(ctx.destination)
+      })
+      const wait = ctx.createDelay(1)
+      wait.delayTime.value = DIRECT_LATENCY
+      node.connect(wait).connect(this.analyser)
+    } else {
+      this.volumeNode.connect(ctx.destination)
+      node.connect(this.analyser)
+    }
     this.applyEq(0)
 
     const hzPerBin = ctx.sampleRate / FFT

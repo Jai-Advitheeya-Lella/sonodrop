@@ -22,8 +22,15 @@ const bridge: SonoBridge = {
     set: (key, value) => ipcRenderer.send('store:set', key, value)
   },
   audio: {
-    canResample: () => ipcRenderer.invoke('audio:canResample'),
-    prepare: (trackId, rate) => ipcRenderer.send('audio:prepare', trackId, rate)
+    capabilities: () => ipcRenderer.invoke('audio:capabilities'),
+    prepare: (trackId, rate) => ipcRenderer.send('audio:prepare', trackId, rate),
+    output: () => ipcRenderer.invoke('audio:output'),
+    onOutputChange: (cb) => listen('audio:output', cb),
+    closeSink: () => ipcRenderer.send('audio:sink-close')
+  },
+  online: {
+    setEnabled: (enabled) => ipcRenderer.send('online:set', enabled),
+    retry: () => ipcRenderer.send('online:retry')
   },
   widgets: {
     toggle: (id) => ipcRenderer.send('widgets:toggle', id),
@@ -42,3 +49,10 @@ const bridge: SonoBridge = {
 }
 
 contextBridge.exposeInMainWorld('sono', bridge)
+
+// The page hands over the audio thread's MessagePort by posting it to its own window; forward it to the main process.
+window.addEventListener('message', (event) => {
+  if (event.source === window && event.data?.sonoSink && event.ports.length) {
+    ipcRenderer.postMessage('audio:sink', event.data.sonoSink, [...event.ports])
+  }
+})

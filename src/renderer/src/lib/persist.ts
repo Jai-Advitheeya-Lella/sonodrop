@@ -18,17 +18,18 @@ function save(key: string, value: () => unknown, delay = 500): void {
 /** Load everything from disk into the stores, then keep disk in step with them. */
 export async function hydrate(): Promise<void> {
   const { store, library, audio, widgets } = window.sono
-  const [settings, user, session, position, snapshot, canResample, openWidgets] = await Promise.all([
+  const [settings, user, session, position, snapshot, caps, output, openWidgets] = await Promise.all([
     store.get<Partial<Settings>>('settings'),
     store.get<Partial<UserData>>('user'),
     store.get<Partial<Session>>('session'),
     store.get<number>('position'),
     library.get(),
-    audio.canResample(),
+    audio.capabilities(),
+    audio.output(),
     widgets.open()
   ])
   useUi.getState().hydrate(settings)
-  useUi.setState({ canResample, openWidgets })
+  useUi.setState({ caps, output, openWidgets })
   useUser.getState().hydrate(user)
   useLibrary.getState().setTracks(snapshot.tracks, snapshot.folders)
   // The engine needs its equaliser and sample rate before the first track is loaded.
@@ -66,6 +67,17 @@ export async function hydrate(): Promise<void> {
   window.setInterval(() => {
     if (!engine.el.paused) store.set('position', engine.el.currentTime)
   }, 5000)
+
+  audio.onOutputChange((device) => {
+    const before = useUi.getState().output
+    useUi.setState({ output: device })
+    if (device && before && device.name !== before.name) useUi.getState().toast(`Now playing through ${device.description}`)
+  })
+  // The main process does the looking up; it needs to know whether it may.
+  window.sono.online.setEnabled(useUi.getState().onlineLookup)
+  useUi.subscribe((state, prev) => {
+    if (state.onlineLookup !== prev.onlineLookup) window.sono.online.setEnabled(state.onlineLookup)
+  })
 
   library.onUpdated((next) => useLibrary.getState().setTracks(next.tracks, next.folders))
   library.onProgress((progress) => {

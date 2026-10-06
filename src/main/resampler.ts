@@ -1,21 +1,24 @@
-import { execFile, spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { mkdirSync, promises as fs, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Track } from '@shared/types'
+import { run } from './ffmpeg'
 
-/** How many resampled files to keep around: the current track, the next one, and a little history. */
+/** How many converted files to keep around: the current track, the next one, and a little history. */
 const KEEP = 4
 
 /**
- * High-quality sample-rate conversion with the SoX resampler (libsoxr, through ffmpeg).
- * A track is rendered once to a 24-bit WAV at the target rate, then streamed like any other file,
- * so seeking keeps working. Needs `ffmpeg` built with libsoxr on the PATH.
+ * Turns a track into something the player can stream, using ffmpeg:
+ *  - formats the built-in decoder can't read (ALAC, AIFF, APE, WavPack, WMA, DSD, …) are decoded;
+ *  - when resampling is on, the SoX resampler (libsoxr) converts to the requested rate at its
+ *    very-high-quality setting.
+ * The result is a 24-bit WAV, rendered once and then streamed like any other file, so seeking works.
  */
 export class Resampler {
   private readonly dir: string
   private readonly jobs = new Map<string, Promise<string | null>>()
   private recent: string[] = []
-  private available: Promise<boolean> | null = null
+  private tools: Promise<{ ffmpeg: boolean; soxr: boolean }> | null = null
 
   constructor(dataDir: string) {
     this.dir = join(dataDir, 'resampled')
@@ -24,20 +27,31 @@ export class Resampler {
     for (const name of readdirSync(this.dir)) rmSync(join(this.dir, name), { force: true })
   }
 
-  isAvailable(): Promise<boolean> {
-    this.available ??= new Promise((resolve) => {
-      execFile('ffmpeg', ['-hide_banner', '-buildconf'], (err, stdout) => resolve(!err && stdout.includes('--enable-libsoxr')))
-    })
-    return this.available
+  available(): Promise<{ ffmpeg: boolean; soxr: boolean }> {
+    this.tools ??= run('ffmpeg', ['-hide_banner', '-buildconf']).then((out) => ({
+      ffmpeg: out !== null,
+      soxr: out?.includes('--enable-libsoxr') ?? false
+    }))
+    return this.tools
   }
 
-  /** Path of the track at `rate` Hz — the original file when it is already there or conversion isn't possible. */
-  async fileFor(track: Track, rate: number): Promise<string> {
-    if (track.sampleRate === rate || !(await this.isAvailable())) return track.path
-    const key = `${track.id}-${track.mtime}-${rate}`
+  /**
+   * Path of something playable for this track, at `rate` Hz if one is asked for.
+   * Falls back to the original file whenever conversion isn't needed or isn't possible.
+   */
+  async fileFor(track: Track, rate: number | null, force = false): Promise<string> {
+    const { ffmpeg, soxr } = await this.available()
+    if (!ffmpeg) return track.path
+    const decode = force || !track.native
+    let target = rate && rate !== track.sampleRate && soxr ? rate : null
+    // DSD decodes to PCM at 352.8 kHz and up; bring it down to a rate sound cards accept.
+    if (!target && decode && (track.sampleRate ?? 0) > 192000) target = 176400
+    if (!decode && !target) return track.path
+
+    const key = `${track.id}-${track.mtime}-${target ?? 'src'}`
     let job = this.jobs.get(key)
     if (!job) {
-      job = this.convert(track.path, join(this.dir, `${key}.wav`), rate)
+      job = this.convert(track.path, join(this.dir, `${key}.wav`), target, soxr)
       this.jobs.set(key, job)
     }
     const file = await job
@@ -53,20 +67,14 @@ export class Resampler {
     rmSync(this.dir, { recursive: true, force: true })
   }
 
-  private convert(input: string, output: string, rate: number): Promise<string | null> {
+  private convert(input: string, output: string, rate: number | null, soxr: boolean): Promise<string | null> {
     return new Promise((resolve) => {
       const part = `${output}.part`
+      // 28-bit precision is SoX's "very high quality" setting.
+      const filter = rate ? (soxr ? ['-af', `aresample=resampler=soxr:precision=28:osr=${rate}`] : ['-ar', String(rate)]) : []
       const ffmpeg = spawn(
         'ffmpeg',
-        [
-          '-v', 'error', '-nostdin', '-y',
-          '-i', input,
-          '-vn', '-map', '0:a:0',
-          // 28-bit precision is SoX's "very high quality" setting.
-          '-af', `aresample=resampler=soxr:precision=28:osr=${rate}`,
-          '-c:a', 'pcm_s24le', '-rf64', 'auto', '-f', 'wav',
-          part
-        ],
+        ['-v', 'error', '-nostdin', '-y', '-i', input, '-vn', '-map', '0:a:0', ...filter, '-c:a', 'pcm_s24le', '-rf64', 'auto', '-f', 'wav', part],
         { stdio: ['ignore', 'ignore', 'pipe'] }
       )
       let stderr = ''

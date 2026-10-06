@@ -16,14 +16,22 @@ Grab a package from the [Releases](https://github.com/Jai-Advitheeya-Lella/sonod
 
 - The AppImage needs FUSE 2 (`libfuse2` on Debian/Ubuntu, `fuse2` on Arch). Without it, run
   `./Sonodrop-*.AppImage --appimage-extract-and-run`. If it stops with a sandbox error on a recent Ubuntu, use the `.deb`.
-- **ffmpeg** is optional. It powers SoX resampling; everything else works without it.
+- Two optional helpers, both already present on most desktops:
+  - **ffmpeg** plays the formats the built-in decoder can't (ALAC, AIFF, APE, WavPack, WMA, DSD…) and does the SoX resampling.
+  - **pacat** (package `pulseaudio-utils`, or `libpulse` on Arch) drives surround speakers and subwoofers. Without it Sonodrop plays in stereo.
 
 First launch scans `~/Music`. Add other folders in **Themes & Settings → Music folders**, or drag folders and
 files onto the window. Your library, playlists, likes and settings live in `~/.config/sonodrop/`.
 
 ## What's in it
 
-- **Formats** MP3, FLAC, WAV, plus OGG, Opus and AAC/M4A.
+- **Formats** MP3, FLAC, WAV, OGG, Opus and AAC/M4A directly; ALAC, AIFF, APE, WavPack, TTA, WMA, DSD (DSF/DFF), Musepack,
+  MP2, AC3, DTS, CAF, MKA and AMR through ffmpeg.
+- **Speakers** the output device is detected (and followed when it changes). On 5.1 / 7.1 / 2.1 systems each speaker gets its own
+  channel: stereo music stays in the front pair with its low end sent to the subwoofer (crossover and level adjustable), or is
+  spread over every speaker; surround files play speaker-for-speaker.
+- **Missing details and artwork** read from file and folder names (`Artist/Album (1999)/03 - Title.flac`), then looked up on
+  MusicBrainz and the Cover Art Archive. Can be switched off in Settings; only names are sent, and files are never modified.
 - **Library** Albums / Songs / Artists, sortable by name, date added and more, ascending or descending.
   Albums come in two layouts: a grid, or **Record view** — the sleeves on a 3D ring you spin with the wheel, a drag or the arrow keys.
 - **Search** across titles, artists, albums, genres, file names and folder paths (`Ctrl K`).
@@ -37,19 +45,19 @@ files onto the window. Your library, playlists, likes and settings live in `~/.c
 
 ### Sending high sample rates to your DAC
 
-Sonodrop hands audio to the system mixer, and the mixer decides what the device receives. PipeWire runs at
-48 kHz unless told otherwise, so anything above that is converted back down on the way out. For a higher rate
-to reach the hardware, raise the mixer's rate to match what you pick in **Sound → Resampling**:
+When the rate chosen in **Sound → Resampling** differs from the device's, Sonodrop hands the audio to the sound
+server at that rate directly. What the hardware then receives is the mixer's decision: PipeWire runs everything at
+48 kHz unless it is allowed to switch. To let it follow the music:
 
 ```
-# ~/.config/pipewire/pipewire.conf.d/10-rate.conf
+# ~/.config/pipewire/pipewire.conf.d/10-rates.conf
 context.properties = {
-  default.clock.rate = 96000
+  default.clock.allowed-rates = [ 44100 48000 88200 96000 176400 192000 ]
 }
 ```
 
-then `systemctl --user restart pipewire pipewire-pulse` and restart Sonodrop. "Device rate" needs none of
-this: it converts straight to whatever the mixer is running at.
+then `systemctl --user restart pipewire pipewire-pulse`. "Device rate" needs none of this: it converts straight
+to whatever the mixer is running at.
 
 ### Desktop widgets on tiling window managers
 
@@ -78,11 +86,13 @@ Set `SONODROP_DATA_DIR=/some/dir` to run against a separate profile.
 src/main/        Electron main process
   library.ts       folder scanning, tag reading, cover cache
   protocol.ts      sono:// — streams audio and artwork to the UI by id
-  resampler.ts     SoX resampling through ffmpeg
+  resampler.ts     decoding of extra formats and SoX resampling, through ffmpeg
+  enrich.ts        online lookup of missing details and artwork
+  output.ts        output-device detection and the direct (multichannel) sink
 src/preload/     the narrow bridge the UI is allowed to call (window.sono)
 src/shared/      types and the desktop-widget list, used on both sides
 src/renderer/src
-  audio/           engine (playback, equaliser, analysis) and the live audio feed visuals read
+  audio/           engine (playback, equaliser, analysis), speaker routing, and the live audio feed visuals read
   stores/          state: library, player, user data, UI/settings
   fluid/           shaders (backdrop turntable, 3D scene, visualisers), drips, splashes, theme curtain
   components/      player bar, track table, record ring, cards, queue, menus…
@@ -101,7 +111,7 @@ src/renderer/src
 | A visualiser      | Write a fragment-shader body in `fluid/visuals.ts` and append it to `VISUALS`.                   |
 | A desktop widget  | Describe it in `shared/widgets.ts`, give it a component in `desktop/registry.tsx`.               |
 | An EQ preset      | Add a row to `EQ_PRESETS` in `views/Sound.tsx`.                                                  |
-| An audio format   | Add the extension to `AUDIO_EXT` in `main/library.ts` and its MIME type in `protocol.ts`.        |
+| An audio format   | Add the extension to `NATIVE` or `VIA_FFMPEG` in `main/library.ts`.                              |
 | An icon           | Add a path to `components/Icon.tsx`.                                                             |
 | A page            | Add a variant to `Route` in `stores/ui.ts` and a case in `App.tsx`.                              |
 | A new track field | Add it to `Track`, fill it in `readTrack`, bump `LIBRARY_VERSION` (forces one re-scan).          |

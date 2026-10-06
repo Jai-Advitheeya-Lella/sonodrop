@@ -1,9 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import type { AudioFrame, WidgetCommand, WidgetState } from '@shared/types'
+import type { AudioCapabilities, AudioFrame, OutputDevice, SinkSpec, WidgetCommand, WidgetState } from '@shared/types'
 import { DESKTOP_WIDGETS, widgetById } from '@shared/widgets'
+import { Enricher } from './enrich'
 import { Library } from './library'
+import { detectOutput, DirectSink, watchOutput } from './output'
 import { handleScheme, registerScheme } from './protocol'
 import { Resampler } from './resampler'
 import { JsonStore } from './store'
@@ -30,6 +32,10 @@ const widgetWindows = new Map<string, BrowserWindow>()
 let quitting = false
 let library: Library
 let resampler: Resampler
+let enricher: Enricher
+const sink = new DirectSink()
+let output: OutputDevice | null = null
+let stopWatchingOutput = (): void => {}
 let settings: JsonStore<Record<string, unknown>>
 
 function load(win: BrowserWindow, widget?: string): void {
@@ -124,10 +130,30 @@ function registerIpc(): void {
   ipcMain.handle('store:get', (_e, key: string) => settings.get(key))
   ipcMain.on('store:set', (_e, key: string, value: unknown) => settings.set(key, value))
 
-  ipcMain.handle('audio:canResample', () => resampler.isAvailable())
+  ipcMain.handle('audio:capabilities', async (): Promise<AudioCapabilities> => {
+    const [{ ffmpeg, soxr }, direct] = await Promise.all([resampler.available(), sink.isAvailable()])
+    return { decode: ffmpeg, resample: ffmpeg && soxr, direct }
+  })
   ipcMain.on('audio:prepare', (_e, id: string, rate: number) => {
     const track = library.track(id)
-    if (track && rate > 0) void resampler.fileFor(track, rate)
+    if (track) void resampler.fileFor(track, rate > 0 ? rate : null)
+  })
+  ipcMain.handle('audio:output', async () => (output ??= await detectOutput()))
+  ipcMain.on('audio:sink', (event, spec: SinkSpec) => {
+    const [port] = event.ports
+    const valid = port && spec.rate > 0 && spec.channels > 0 && spec.channels <= 32 && spec.map.length === spec.channels && spec.map.every((p) => /^[a-z0-9-]+$/.test(p))
+    if (valid) sink.open(spec, port)
+  })
+  ipcMain.on('audio:sink-close', () => sink.close())
+
+  ipcMain.on('online:set', (_e, enabled: boolean) => {
+    settings.set('online', enabled)
+    enricher.enabled = enabled
+    if (enabled) void enricher.run()
+  })
+  ipcMain.on('online:retry', () => {
+    enricher.forgetMisses()
+    void enricher.run()
   })
 
   ipcMain.on('shell:showInFolder', (_e, path: string) => {
@@ -166,8 +192,18 @@ if (!app.requestSingleInstanceLock()) {
     Menu.setApplicationMenu(null)
     const dataDir = app.getPath('userData')
     settings = new JsonStore<Record<string, unknown>>(join(dataDir, 'settings.json'), {})
-    library = new Library(dataDir, (channel, payload) => mainWindow?.webContents.send(channel, payload))
+    library = new Library(
+      dataDir,
+      (channel, payload) => mainWindow?.webContents.send(channel, payload),
+      () => void enricher.run()
+    )
+    enricher = new Enricher(library, dataDir)
+    enricher.enabled = settings.get('online') !== false
     resampler = new Resampler(dataDir)
+    stopWatchingOutput = watchOutput((device) => {
+      output = device
+      mainWindow?.webContents.send('audio:output', device)
+    })
     handleScheme(library, resampler)
     registerIpc()
     createMainWindow()
@@ -194,7 +230,12 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true
     settings?.flushSync()
     library?.flushSync()
+    enricher?.flushSync()
     resampler?.clear()
+    sink.close()
+    stopWatchingOutput()
   })
   app.on('window-all-closed', () => app.quit())
+  // Being asked to stop from outside (logout, `kill`) should tidy up the same way as closing the window.
+  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) process.on(signal, () => app.quit())
 }

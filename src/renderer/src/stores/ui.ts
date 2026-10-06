@@ -1,5 +1,7 @@
 import { create } from 'zustand'
+import type { AudioCapabilities, OutputDevice } from '@shared/types'
 import { EQ_FLAT, type EqSettings } from '@/audio/engine'
+import { SPEAKER_DEFAULTS, type SpeakerSettings } from '@/audio/router'
 import type { IconName } from '@/components/Icon'
 import type { AlbumSort, ArtistSort, SongSort, SortState } from '@/lib/sort'
 import { DEFAULT_THEME } from '@/themes'
@@ -48,6 +50,9 @@ export interface Settings {
   visualizer: string
   eq: EqSettings
   resample: Resample
+  speakers: SpeakerSettings
+  /** Look up missing details and artwork on the internet. */
+  onlineLookup: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -60,6 +65,8 @@ export const DEFAULT_SETTINGS: Settings = {
   visualizer: 'ink',
   eq: EQ_FLAT,
   resample: 'off',
+  speakers: SPEAKER_DEFAULTS,
+  onlineLookup: true,
   sort: {
     songs: { by: 'title', dir: 'asc' },
     albums: { by: 'dateAdded', dir: 'desc' },
@@ -76,8 +83,10 @@ interface UiState extends Settings {
   nowPlayingOpen: boolean
   /** Desktop widgets currently on screen. */
   openWidgets: string[]
-  /** ffmpeg with the SoX resampler is installed. */
-  canResample: boolean
+  /** What the machine can do: decode extra formats, resample, output surround directly. */
+  caps: AudioCapabilities
+  /** The sound device the system is playing through, when it can be told. */
+  output: OutputDevice | null
   menu: { x: number; y: number; items: MenuItem[] } | null
   toasts: Toast[]
   hydrate(settings: Partial<Settings> | undefined): void
@@ -102,14 +111,16 @@ export const useUi = create<UiState>((set, get) => ({
   queueOpen: false,
   nowPlayingOpen: false,
   openWidgets: [],
-  canResample: false,
+  caps: { decode: false, resample: false, direct: false },
+  output: null,
   menu: null,
   toasts: [],
   hydrate: (settings) =>
     set({
       ...settings,
       sort: { ...DEFAULT_SETTINGS.sort, ...settings?.sort },
-      eq: { ...EQ_FLAT, ...settings?.eq }
+      eq: { ...EQ_FLAT, ...settings?.eq },
+      speakers: { ...SPEAKER_DEFAULTS, ...settings?.speakers }
     }),
   patch: (settings) => set(settings),
   go: (route) => {
@@ -152,5 +163,7 @@ export const settingsOf = (s: UiState): Settings => ({
   sort: s.sort,
   visualizer: s.visualizer,
   eq: s.eq,
-  resample: s.resample
+  resample: s.resample,
+  speakers: s.speakers,
+  onlineLookup: s.onlineLookup
 })

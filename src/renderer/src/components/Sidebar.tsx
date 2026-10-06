@@ -28,7 +28,7 @@ function ScanStatus(): React.JSX.Element | null {
         <i style={{ transform: `translateY(${(1 - fraction) * 100}%)` }} />
       </div>
       <div className="scan-text">
-        <strong>{scan.phase === 'listing' ? 'Looking for music…' : 'Pouring in your library'}</strong>
+        <strong>{scan.phase === 'listing' ? 'Looking for music…' : scan.phase === 'online' ? 'Finding missing artwork' : 'Pouring in your library'}</strong>
         {scan.total > 0 && (
           <span>
             {scan.done.toLocaleString()} / {scan.total.toLocaleString()}

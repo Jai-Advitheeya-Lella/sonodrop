@@ -56,7 +56,7 @@ export function EmptyLibrary(): React.JSX.Element {
         <span />
       </div>
       <h1>{scanning ? 'Pouring…' : 'It’s dry in here'}</h1>
-      <p>Point Sonodrop at a folder of music, or drag folders and files straight onto this window. MP3, FLAC, WAV, OGG, Opus and AAC all play.</p>
+      <p>Point Sonodrop at a folder of music, or drag folders and files straight onto this window. MP3, FLAC, WAV, ALAC, AIFF, OGG, Opus, AAC and more all play.</p>
       <button className="pill primary" onClick={() => void window.sono.library.chooseFolders()}>
         <Icon name="folder" size={16} />
         Choose a music folder

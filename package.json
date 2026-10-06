@@ -1,6 +1,6 @@
 {
   "name": "sonodrop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A liquid local music player",
   "private": true,
   "type": "module",
@@ -75,7 +75,8 @@
     },
     "deb": {
       "recommends": [
-        "ffmpeg"
+        "ffmpeg",
+        "pulseaudio-utils"
       ]
     }
   },

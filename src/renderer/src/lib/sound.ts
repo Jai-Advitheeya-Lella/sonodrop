@@ -1,14 +1,17 @@
 import { engine } from '@/audio/engine'
-import { resampleRate, usePlayer } from '@/stores/player'
+import { outputPlan, usePlayer } from '@/stores/player'
+import { trackById } from '@/stores/library'
 import { useUi } from '@/stores/ui'
 
-/** Push the sound settings into the audio engine now, and again whenever they change. */
+/** Push the sound settings into the audio engine now, and again whenever they or the output device change. */
 export function syncSound(): void {
   engine.setEq(useUi.getState().eq)
-  engine.setOutputRate(resampleRate())
   useUi.subscribe((state, prev) => {
     if (state.eq !== prev.eq) engine.setEq(state.eq)
-    // A new sample rate means a new audio graph; pick the music back up where it was.
-    if (state.resample !== prev.resample && resampleRate() !== engine.outputRate) usePlayer.getState().reload()
+    if (state.resample === prev.resample && state.speakers === prev.speakers && state.output === prev.output) return
+    const plan = outputPlan(trackById(usePlayer.getState().currentId)?.channels ?? 2)
+    // A different rate, device or speaker layout means a new audio graph; pick the music back up where it was.
+    if (engine.needsRebuild(plan)) usePlayer.getState().reload()
+    else engine.configure(plan)
   })
 }

@@ -7,6 +7,8 @@ import type { Resampler } from './resampler'
 /**
  * sono://media/<trackId>  audio, with range support so seeking works
  *   …?sr=96000            the same track, SoX-resampled to that rate
+ *   …?t=1                 decode through ffmpeg even if the format looks playable (the retry after a failed play)
+ * Formats the built-in decoder can't read always go through ffmpeg.
  * sono://cover/<coverId>  full-size artwork
  * sono://thumb/<coverId>  thumbnail artwork
  *
@@ -107,12 +109,10 @@ export function handleScheme(library: Library, resampler: Resampler): void {
       const id = decodeURIComponent(url.pathname.slice(1))
       if (url.host === 'media') {
         const track = library.track(id)
-        const rate = Number(url.searchParams.get('sr'))
-        if (track && rate > 0) {
-          const file = await resampler.fileFor(track, rate)
+        if (track) {
+          const file = await resampler.fileFor(track, Number(url.searchParams.get('sr')) || null, url.searchParams.has('t'))
           return await serveMedia(file, request, file === track.path ? undefined : 'audio/wav')
         }
-        if (track) return await serveMedia(track.path, request)
       } else if ((url.host === 'cover' || url.host === 'thumb') && /^[a-f0-9]+$/.test(id)) {
         const buf = await fs.readFile(library.coverFile(id, url.host === 'thumb'))
         return new Response(new Uint8Array(buf), {

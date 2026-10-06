@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { deviceRate, engine } from '@/audio/engine'
+import { deviceRate, engine, planOutput, type OutputPlan } from '@/audio/engine'
 import { coverUrl } from '@/lib/format'
 import { trackById, useLibrary } from './library'
 import { useUi } from './ui'
@@ -24,7 +24,7 @@ interface PlayerState extends Session {
   buffering: boolean
   duration: number
   /** Load the current track again where it is, after the engine or its settings changed. */
-  reload(): void
+  reload(autoplay?: boolean): void
   restore(session: Partial<Session> | undefined, position: number): void
   /** Replace the queue with these tracks and start at `start`. */
   playTracks(ids: string[], start?: number): void
@@ -59,12 +59,24 @@ let artworkUrl = ''
 
 /** The rate tracks are SoX-resampled to (and the audio graph runs at), or null when resampling is off. */
 export function resampleRate(): number | null {
-  const { resample, canResample } = useUi.getState()
-  if (resample === 'off' || !canResample) return null
-  return resample === 'device' ? deviceRate() : resample
+  const { resample, caps, output } = useUi.getState()
+  if (resample === 'off' || !caps.resample) return null
+  return resample === 'device' ? (output?.rate ?? deviceRate()) : resample
 }
 
-const mediaUrl = (id: string, rate: number | null): string => `sono://media/${id}${rate ? `?sr=${rate}` : ''}`
+/** How the audio engine should be set up to play a file with this many channels on the current device. */
+export function outputPlan(sourceChannels: number): OutputPlan {
+  const { caps, output, speakers } = useUi.getState()
+  return planOutput({ rate: resampleRate(), device: output, canDirect: caps.direct, speakers, sourceChannels })
+}
+
+/** Tracks that looked playable but weren't: these go through ffmpeg from now on. */
+const viaFfmpeg = new Set<string>()
+
+function mediaUrl(id: string, rate: number | null): string {
+  const query = [rate ? `sr=${rate}` : '', viaFfmpeg.has(id) ? 't=1' : ''].filter(Boolean).join('&')
+  return `sono://media/${id}${query ? `?${query}` : ''}`
+}
 
 export const usePlayer = create<PlayerState>((set, get) => {
   /** Point the audio element at queue[index]. */
@@ -74,13 +86,14 @@ export const usePlayer = create<PlayerState>((set, get) => {
     if (!track) return
     counted = false
     const rate = resampleRate()
-    engine.setOutputRate(rate)
+    engine.configure(outputPlan(track.channels ?? 2))
     engine.load(mediaUrl(track.id, rate))
     if (position > 0) engine.el.currentTime = position
     set({ currentId: track.id, duration: track.duration, buffering: autoplay })
     if (autoplay) void engine.play()
-    // Get the next track resampled while this one plays, so the hand-over doesn't wait.
-    if (rate && queue[index + 1]) window.sono.audio.prepare(queue[index + 1], rate)
+    // Get the next track converted while this one plays, so the hand-over doesn't wait.
+    const upcoming = trackById(queue[index + 1])
+    if (upcoming && (rate || !upcoming.native)) window.sono.audio.prepare(upcoming.id, rate ?? 0)
 
     const describe = (artwork: MediaImage[]): void => {
       navigator.mediaSession.metadata = new MediaMetadata({ title: track.title, artist: track.artist, album: track.album, artwork })
@@ -118,10 +131,10 @@ export const usePlayer = create<PlayerState>((set, get) => {
     buffering: false,
     duration: 0,
 
-    reload: () => {
+    reload: (autoplay) => {
       if (!get().currentId) return
       const position = engine.el.currentTime
-      load(!engine.el.paused, position)
+      load(autoplay ?? !engine.el.paused, position)
     },
 
     restore: (session, position) => {
@@ -312,8 +325,15 @@ engine.on('timeupdate', () => {
 })
 engine.on('error', () => {
   if (!engine.el.getAttribute('src')) return
-  const { currentId, queue, index, next } = usePlayer.getState()
-  useUi.getState().toast(`Can't play “${trackById(currentId)?.title ?? 'this file'}”`)
+  const { currentId, queue, index, next, reload } = usePlayer.getState()
+  const track = trackById(currentId)
+  const { caps, toast } = useUi.getState()
+  // The built-in decoder gave up on something it should have managed: have ffmpeg decode it instead, once.
+  if (track && caps.decode && !viaFfmpeg.has(track.id)) {
+    viaFfmpeg.add(track.id)
+    return reload(true)
+  }
+  toast(track && !track.native && !caps.decode ? `${track.codec} files need ffmpeg installed` : `Can't play “${track?.title ?? 'this file'}”`)
   failures++
   if (failures < 4 && index + 1 < queue.length) next()
   else usePlayer.setState({ playing: false, buffering: false })

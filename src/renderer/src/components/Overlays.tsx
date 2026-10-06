@@ -135,7 +135,7 @@ export function DropOverlay(): React.JSX.Element {
           <Icon name="drop" size={56} fill />
         </span>
         <h2>Let go to pour it in</h2>
-        <p>Folders, MP3, FLAC, WAV, OGG, Opus, AAC…</p>
+        <p>Folders, MP3, FLAC, WAV, ALAC, AIFF, OGG, Opus, AAC…</p>
       </div>
     </div>
   )

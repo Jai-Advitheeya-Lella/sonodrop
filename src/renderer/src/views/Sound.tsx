@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { createEqFilters, deviceRate, EQ_BANDS, EQ_FLAT, EQ_RANGE, eqPreamp, type EqSettings } from '@/audio/engine'
 import { feed, FEED_SIZE } from '@/audio/levels'
+import { hasSubwoofer, layoutName, type SpeakerSettings } from '@/audio/router'
 import { Icon } from '@/components/Icon'
 import { clamp } from '@/lib/format'
 import { useCurrentTrack } from '@/lib/hooks'
@@ -33,6 +34,21 @@ const RATES: [Resample, string][] = [
   [176400, '176.4 kHz'],
   [192000, '192 kHz']
 ]
+
+/** Where each speaker stands in the little room diagram (percent), and what to call it. */
+const SPEAKERS: Record<string, [x: number, y: number, label: string]> = {
+  mono: [50, 10, 'M'],
+  'front-left': [18, 14, 'L'],
+  'front-center': [50, 8, 'C'],
+  'front-right': [82, 14, 'R'],
+  lfe: [66, 30, 'SUB'],
+  'side-left': [6, 56, 'SL'],
+  'side-right': [94, 56, 'SR'],
+  'rear-left': [20, 92, 'RL'],
+  'rear-center': [50, 95, 'RC'],
+  'rear-right': [80, 92, 'RR']
+}
+const CROSSOVERS = [60, 80, 100, 120]
 
 const khz = (hz: number): string => `${+(hz / 1000).toFixed(1)} kHz`
 const db = (value: number): string => `${value > 0 ? '+' : ''}${value.toFixed(1).replace(/\.0$/, '')}`
@@ -193,12 +209,29 @@ function Band({ label, value, disabled, onChange }: BandProps): React.JSX.Elemen
 export function Sound(): React.JSX.Element {
   const eq = useUi((s) => s.eq)
   const resample = useUi((s) => s.resample)
-  const canResample = useUi((s) => s.canResample)
+  const canResample = useUi((s) => s.caps.resample)
+  const canDirect = useUi((s) => s.caps.direct)
+  const output = useUi((s) => s.output)
+  const speakers = useUi((s) => s.speakers)
   const patch = useUi((s) => s.patch)
   const track = useCurrentTrack()
-  const device = useMemo(deviceRate, [])
+  const fallbackRate = useMemo(deviceRate, [])
+  const device = output?.rate ?? fallbackRate
   const setEq = (change: Partial<EqSettings>): void => patch({ eq: { ...eq, ...change } })
+  const setSpeakers = (change: Partial<SpeakerSettings>): void => patch({ speakers: { ...speakers, ...change } })
   const target = resample === 'off' || !canResample ? null : resample === 'device' ? device : resample
+
+  const surround = !!output && output.channels > 2
+  const sub = hasSubwoofer(output)
+  const multichannelFile = (track?.channels ?? 2) > 2
+  // Which speakers get sound with the current settings.
+  const live = (position: string): boolean => {
+    if (!surround || !canDirect || speakers.mode === 'stereo') return position === 'front-left' || position === 'front-right'
+    if (position === 'lfe') return speakers.sub
+    return speakers.mode === 'fill' || multichannelFile || position === 'front-left' || position === 'front-right'
+  }
+  // Going direct keeps the chosen rate all the way to the sound server.
+  const direct = canDirect && !!output && ((surround && speakers.mode !== 'stereo') || (target !== null && target !== device))
 
   return (
     <div className="view sound">
@@ -259,6 +292,121 @@ export function Sound(): React.JSX.Element {
         </div>
       </div>
 
+      <h2 className="section">Speakers</h2>
+      <div className="setting-card">
+        {output ? (
+          <>
+            <div className="device">
+              <div className="room" aria-hidden>
+                {output.map.map((position, i) => {
+                  const [x, y, label] = SPEAKERS[position] ?? [50, 50, '?']
+                  return (
+                    <i key={i} className={`spk ${position === 'lfe' ? 'sub' : ''} ${live(position) ? 'on' : ''}`} style={{ left: `${x}%`, top: `${y}%` }}>
+                      {label}
+                    </i>
+                  )
+                })}
+                <span className="listener" />
+              </div>
+              <div className="device-text">
+                <small>Playing through</small>
+                <strong>{output.description}</strong>
+                <span>
+                  <span className="badge lossless">{layoutName(output.map)}</span> {output.channels} channels · {khz(output.rate)}
+                  {sub ? ' · subwoofer' : ''}
+                </span>
+                <span className="hint">
+                  {direct
+                    ? 'Sonodrop is sending each speaker its own channel, straight to the sound server.'
+                    : surround && !canDirect
+                      ? 'Driving more than two speakers needs the “pacat” tool (package pulseaudio-utils or libpulse). Playing in stereo for now.'
+                      : 'Detected automatically, and followed when you switch outputs or plug in headphones.'}
+                </span>
+              </div>
+            </div>
+
+            {surround && canDirect && (
+              <>
+                <div className="segmented wrap" role="radiogroup" aria-label="Speaker layout">
+                  {(
+                    [
+                      ['auto', 'As mixed'],
+                      ['fill', 'Fill every speaker'],
+                      ['stereo', 'Front pair only']
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button key={id} role="radio" aria-checked={speakers.mode === id} onClick={() => setSpeakers({ mode: id })}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="hint">
+                  {speakers.mode === 'auto' && 'Stereo music plays from the front pair; surround files use every speaker they were mixed for.'}
+                  {speakers.mode === 'fill' && 'Stereo music is spread out: a real centre, and the surrounds carry a softer, slightly late copy of each side.'}
+                  {speakers.mode === 'stereo' && 'Everything plays from the front left and right speakers only.'}
+                </p>
+              </>
+            )}
+
+            {sub && surround && canDirect && speakers.mode !== 'stereo' && (
+              <div className="sub-controls">
+                <button className="toggle-row" role="switch" aria-checked={speakers.sub} onClick={() => setSpeakers({ sub: !speakers.sub })}>
+                  <span>
+                    <strong>Subwoofer</strong>
+                    <small>Send it the low end of stereo music, which has no subwoofer channel of its own</small>
+                  </span>
+                  <span className="toggle">
+                    <i />
+                  </span>
+                </button>
+                {speakers.sub && (
+                  <>
+                    <div className="field">
+                      <span>Crossover</span>
+                      <div className="segmented" role="radiogroup" aria-label="Crossover frequency">
+                        {CROSSOVERS.map((hz) => (
+                          <button key={hz} role="radio" aria-checked={speakers.crossover === hz} onClick={() => setSpeakers({ crossover: hz })}>
+                            {hz} Hz
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <label className="field">
+                      <span>Level</span>
+                      <input
+                        className="slider"
+                        type="range"
+                        min={-12}
+                        max={12}
+                        step={1}
+                        value={speakers.subLevel}
+                        onChange={(e) => setSpeakers({ subLevel: Number(e.target.value) })}
+                        style={{ '--at': (speakers.subLevel + 12) / 24 } as React.CSSProperties}
+                      />
+                      <span className="time">{db(speakers.subLevel)} dB</span>
+                    </label>
+                    <button className="toggle-row" role="switch" aria-checked={speakers.cutMains} onClick={() => setSpeakers({ cutMains: !speakers.cutMains })}>
+                      <span>
+                        <strong>Small main speakers</strong>
+                        <small>Take everything below the crossover out of the front pair, leaving the bass to the subwoofer</small>
+                      </span>
+                      <span className="toggle">
+                        <i />
+                      </span>
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="hint">
+            Sonodrop couldn’t ask the system about its sound output (it uses <code>pactl</code>, from PulseAudio or PipeWire), so it is playing in
+            plain stereo through the default device.
+          </p>
+        )}
+      </div>
+
       <h2 className="section">Resampling</h2>
       <div className="setting-card">
         <div className="segmented wrap" role="radiogroup" aria-label="Resampling">
@@ -294,9 +442,9 @@ export function Sound(): React.JSX.Element {
             </div>
             {target && target > device && (
               <p className="hint warn">
-                Your system mixer runs the output at {khz(device)}, so it converts back down after Sonodrop. To send {khz(target)} to your DAC, raise the
-                mixer’s rate first (PipeWire: <code>default.clock.rate</code>) — the README has the two lines. Until then, “Device rate” is the setting
-                that reaches the speakers untouched.
+                Your system mixer is running the output at {khz(device)}. Sonodrop hands it {khz(target)}
+                {direct ? ' directly' : ''}, and the mixer decides what the hardware gets: it converts back down unless it is allowed to switch rates
+                (PipeWire: <code>default.clock.allowed-rates</code> — the README has the two lines). “Device rate” always reaches the speakers untouched.
               </p>
             )}
           </>

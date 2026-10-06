@@ -118,7 +118,30 @@ export function Settings(): React.JSX.Element {
             <Icon name="refresh" size={15} />
             {scanning ? 'Scanning…' : 'Rescan'}
           </button>
-          <span className="hint">{plural(count, 'song')} in the library. Folders are rescanned every launch.</span>
+          <span className="hint">
+            {plural(count, 'song')} in the library. Folders are rescanned every launch.
+            {ui.caps.decode ? '' : ' Install ffmpeg to play ALAC, AIFF, APE, WavPack, WMA and DSD files.'}
+          </span>
+        </div>
+      </div>
+
+      <h2 className="section">Missing details &amp; artwork</h2>
+      <div className="setting-card">
+        <Toggle
+          label="Look them up online"
+          hint="For albums with no cover and songs with no artist tag"
+          value={ui.onlineLookup}
+          onChange={(onlineLookup) => ui.patch({ onlineLookup })}
+        />
+        <div className="row-actions">
+          <button className="pill" disabled={!ui.onlineLookup || scanning} onClick={() => window.sono.online.retry()}>
+            <Icon name="refresh" size={15} />
+            Look again now
+          </button>
+          <span className="hint">
+            Sonodrop first reads what it can from file and folder names. Then it asks MusicBrainz and the Cover Art Archive, sending only the album,
+            artist and song names. Nothing is written into your files.
+          </span>
         </div>
       </div>
 
@@ -129,7 +152,7 @@ export function Settings(): React.JSX.Element {
             const open = ui.openWidgets.includes(w.id)
             return (
               <button key={w.id} className={`widget-tile ${open ? 'on' : ''}`} aria-pressed={open} onClick={() => window.sono.widgets.toggle(w.id)}>
-                <span className="widget-shape" style={{ aspectRatio: `${w.width} / ${w.height}` }} />
+                <span className="widget-shape" style={{ '--ratio': w.width / w.height } as React.CSSProperties} />
                 <strong>{w.name}</strong>
                 <small>{w.blurb}</small>
                 <span className="widget-state">{open ? 'On the desktop' : 'Add'}</span>
