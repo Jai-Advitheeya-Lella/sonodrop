@@ -39,6 +39,18 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          body: |
+            ## Install
+
+            Open a terminal, paste this line and press Enter:
+
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/Jai-Advitheeya-Lella/sonodrop/master/install.sh | bash
+            ```
+
+            Then open **Sonodrop** from your application menu. Works on any 64-bit Linux desktop, including Bazzite and SteamOS. The same line updates it later.
+
+            Prefer a native package? Pick the `.deb` (Debian/Ubuntu), `.rpm` (Fedora), `.pacman` (Arch) or `.AppImage` below.
           files: |
             dist/*.AppImage
             dist/*.deb

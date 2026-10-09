@@ -4,24 +4,46 @@ A local music player for Linux where everything moves like liquid. Electron + Re
 
 ## Install
 
-Grab a package from the [Releases](https://github.com/Jai-Advitheeya-Lella/sonodrop/releases) page:
+Open a terminal, paste this line and press Enter:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Jai-Advitheeya-Lella/sonodrop/master/install.sh | bash
+```
+
+Then open **Sonodrop** from your application menu. That's it.
+
+- Works on any 64-bit Linux desktop, including immutable ones such as **Bazzite**, Fedora Silverblue and SteamOS.
+- It needs no password and installs only into your home folder (`~/.local/share/sonodrop`).
+- **To update**, run the same line again.
+- **To remove**, run: `curl -fsSL https://raw.githubusercontent.com/Jai-Advitheeya-Lella/sonodrop/master/install.sh | bash -s -- --uninstall`
+
+On first launch Sonodrop scans your `~/Music` folder. Add other folders in **Themes & Settings → Music folders**, or
+drag folders and files onto the window. Your library, playlists, likes and settings live in `~/.config/sonodrop/`.
+
+Two optional helpers unlock more; most desktops already have both, and Sonodrop tells you if one is missing:
+
+- **ffmpeg** plays the formats the built-in decoder can't (ALAC, AIFF, APE, WavPack, WMA, DSD…) and does the SoX resampling.
+- **pacat** (package `pulseaudio-utils`, or `libpulse` on Arch) drives surround speakers and subwoofers. Without it Sonodrop plays in stereo.
+
+<details>
+<summary>Other ways to install</summary>
+
+Every release on the [Releases](https://github.com/Jai-Advitheeya-Lella/sonodrop/releases) page also has native packages:
 
 | Your system                | Take                    | Then                                                        |
 | -------------------------- | ----------------------- | ----------------------------------------------------------- |
-| Any distro                 | `Sonodrop-…​.AppImage`   | `chmod +x Sonodrop-*.AppImage && ./Sonodrop-*.AppImage`     |
 | Debian, Ubuntu, Mint       | `Sonodrop-…​.deb`        | `sudo apt install ./Sonodrop-*.deb`                         |
 | Arch, Manjaro, EndeavourOS | `Sonodrop-…​.pacman`     | `sudo pacman -U Sonodrop-*.pacman`                          |
 | Fedora, openSUSE           | `Sonodrop-…​.rpm`        | `sudo dnf install ./Sonodrop-*.rpm`                         |
+| Any distro, no install     | `Sonodrop-…​.AppImage`   | `chmod +x Sonodrop-*.AppImage && ./Sonodrop-*.AppImage`     |
 | Anything else              | `Sonodrop-…​.tar.gz`     | unpack anywhere and run `./sonodrop`                        |
 
-- The AppImage needs FUSE 2 (`libfuse2` on Debian/Ubuntu, `fuse2` on Arch). Without it, run
-  `./Sonodrop-*.AppImage --appimage-extract-and-run`. If it stops with a sandbox error on a recent Ubuntu, use the `.deb`.
-- Two optional helpers, both already present on most desktops:
-  - **ffmpeg** plays the formats the built-in decoder can't (ALAC, AIFF, APE, WavPack, WMA, DSD…) and does the SoX resampling.
-  - **pacat** (package `pulseaudio-utils`, or `libpulse` on Arch) drives surround speakers and subwoofers. Without it Sonodrop plays in stereo.
+- Running the AppImage directly needs FUSE 2 (`libfuse2` on Debian/Ubuntu, `fuse2` on Arch); without it, add
+  `--appimage-extract-and-run`. The install line above avoids this by unpacking it for you.
+- Already downloaded an AppImage? `bash install.sh /path/to/Sonodrop-*.AppImage` installs that file instead of downloading.
+- On recent Ubuntu, use the `.deb`: the system restricts apps that aren't installed as packages.
 
-First launch scans `~/Music`. Add other folders in **Themes & Settings → Music folders**, or drag folders and
-files onto the window. Your library, playlists, likes and settings live in `~/.config/sonodrop/`.
+</details>
 
 ## What's in it
 
